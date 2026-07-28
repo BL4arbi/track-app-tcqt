@@ -12,7 +12,7 @@
     "preview": "vite preview",
     "electron:dev": "concurrently -k \"npm:dev\" \"wait-on tcp:5173 && electron .\"",
     "electron:build": "npm run build && electron-builder --publish=never",
-    "release": "npm version patch -m \"chore: release v%s\" && npm run build && electron-builder --publish=always"
+    "release": "npm version patch -m \"chore: release v%s\" && npm run build && electron-builder --publish=never"
   },
   "dependencies": {
     "axios": "^1.7.2",
@@ -46,8 +46,7 @@
       {
         "provider": "github",
         "owner": "BL4arbi",
-        "repo": "track-app-tcqt",
-        "releaseType": "draft"
+        "repo": "track-app-tcqt"
       }
     ]
   }

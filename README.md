@@ -53,14 +53,21 @@ process, and `electron-updater` is wired to check `BL4arbi/track-app-tcqt` GitHu
 ```
 cd frontend
 npm run electron:dev      # runs Vite dev server + Electron together, hot reload
-npm run electron:build    # builds an unsigned Windows installer into frontend/release/, no publish
-npm run release           # bumps patch version, builds, and publishes a DRAFT GitHub release
+npm run electron:build    # builds an unsigned Windows installer into frontend/release/
+npm run release           # same, plus bumps the patch version first (needed so updates are detected as newer)
 ```
 
-Notes:
-- `npm run release` needs a `GH_TOKEN` env var (a GitHub personal access token with `repo` scope)
-  to create the draft release — `electron-builder` reads it automatically. Nothing is published
-  until you review and publish the draft on GitHub.
+Releases are published manually, not via CI/token:
+1. Run `npm run release`.
+2. On GitHub, create a new Release with a tag matching the bumped version (e.g. `v0.1.1`), and
+   upload the three files from `frontend/release/`: the `...Setup <version>.exe` installer, its
+   `.blockmap`, and `latest.yml`.
+3. Hit **Publish release** — not just save as draft. `electron-updater` only sees published
+   releases; drafts and pre-releases are invisible to the update check.
+4. Every running desktop client checks on launch, downloads the update in the background if
+   there's a newer version, and prompts "restart now / later" to install it.
+
+Other notes:
 - The installer is unsigned, so Windows SmartScreen will flag it on first run — expected for an
   internal tool; per the handout, skip code-signing unless it becomes annoying.
 - `frontend/electron/main.js` points at `http://localhost:5173` in dev and at the built
