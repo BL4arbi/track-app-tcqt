@@ -1,8 +1,10 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue';
+import { useRouter } from 'vue-router';
 import { api } from '../api/client';
 import { buildUserColorMap, initials } from '../utils/userColors';
 
+const router = useRouter();
 const tasks = ref([]);
 const users = ref([]);
 const loading = ref(true);
@@ -18,9 +20,17 @@ function formatDueDate(dateKey) {
   const [y, m, d] = dateKey.split('-');
   return `${d}/${m}/${y}`;
 }
+function isOverdue(dateKey) {
+  if (!dateKey) return false;
+  const todayKey = new Date().toISOString().slice(0, 10);
+  return dateKey < todayKey;
+}
 function previewUrl(t) {
   if (!t.preview_image_path) return null;
   return `${api.defaults.baseURL}/uploads/${t.preview_image_path}`;
+}
+function openTask(id) {
+  router.push(`/tasks/${id}`);
 }
 
 async function load() {
@@ -54,7 +64,7 @@ onMounted(load);
     <p v-else-if="error" class="error-text">{{ error }}</p>
     <p v-else-if="!tasks.length" class="muted">Aucune tâche active pour le moment.</p>
 
-    <table v-else>
+    <table v-else class="dashboard-table">
       <thead>
         <tr>
           <th>Aperçu</th>
@@ -68,12 +78,10 @@ onMounted(load);
         </tr>
       </thead>
       <tbody>
-        <tr v-for="t in tasks" :key="t.id">
+        <tr v-for="t in tasks" :key="t.id" class="clickable-row" @click="openTask(t.id)">
           <td>
-            <RouterLink :to="`/tasks/${t.id}`">
-              <img v-if="previewUrl(t)" :src="previewUrl(t)" class="preview-thumb-sm" :alt="t.title" />
-              <span v-else class="preview-thumb-sm preview-thumb-sm--empty"></span>
-            </RouterLink>
+            <img v-if="previewUrl(t)" :src="previewUrl(t)" class="preview-thumb-sm" :alt="t.title" />
+            <span v-else class="preview-thumb-sm preview-thumb-sm--empty"></span>
           </td>
           <td>
             <span class="user-chip">
@@ -82,11 +90,11 @@ onMounted(load);
             </span>
           </td>
           <td>{{ t.client_name }}</td>
-          <td><RouterLink :to="`/tasks/${t.id}`">{{ t.title }}</RouterLink></td>
+          <td><strong>{{ t.title }}</strong></td>
           <td>{{ t.current_step || '—' }}</td>
           <td>{{ t.next_step || '—' }}</td>
-          <td>{{ formatDueDate(t.due_date) }}</td>
-          <td>{{ formatDate(t.updated_at) }}</td>
+          <td :class="{ 'due-overdue': isOverdue(t.due_date) }">{{ formatDueDate(t.due_date) }}</td>
+          <td class="muted">{{ formatDate(t.updated_at) }}</td>
         </tr>
       </tbody>
     </table>

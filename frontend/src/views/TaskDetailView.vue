@@ -1,10 +1,12 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, reactive, onMounted } from 'vue';
 import { useRoute } from 'vue-router';
 import { api } from '../api/client';
+import { useAuthStore } from '../store/auth';
 import { WORKFLOW_STEPS } from '../utils/workflowSteps';
 
 const route = useRoute();
+const auth = useAuthStore();
 const task = ref(null);
 const history = ref([]);
 const documents = ref([]);
@@ -15,6 +17,16 @@ const nativeFile = ref(null);
 const previewFile = ref(null);
 const uploadError = ref('');
 const uploading = ref(false);
+
+const addingPreviewFor = ref(null);
+const previewOnlyFile = ref(null);
+const previewOnlyError = ref('');
+const previewOnlySaving = ref(false);
+
+const editing = ref(false);
+const editDraft = reactive({});
+const saving = ref(false);
+const saveError = ref('');
 
 const STATUS_LABELS = { active: 'Actif', paused: 'En pause', done: 'Terminé' };
 
@@ -31,6 +43,7 @@ function statusLabel(s) {
 }
 
 const currentStepIndex = computed(() => task.value ? WORKFLOW_STEPS.indexOf(task.value.current_step) : -1);
+const canEdit = computed(() => task.value && (auth.isManager || task.value.assigned_user_id === auth.user?.id));
 
 function previewUrl(doc) {
   if (!doc.preview_image_path) return null;
@@ -56,15 +69,44 @@ async function load() {
   }
 }
 
+function startEdit() {
+  Object.assign(editDraft, {
+    title: task.value.title,
+    current_step: task.value.current_step || '',
+    due_date: task.value.due_date || '',
+    status: task.value.status,
+  });
+  saveError.value = '';
+  editing.value = true;
+}
+
+async function saveEdit() {
+  saving.value = true;
+  saveError.value = '';
+  try {
+    await api.patch(`/api/tasks/${route.params.id}`, { ...editDraft, due_date: editDraft.due_date || null });
+    editing.value = false;
+    await load();
+  } catch (e) {
+    saveError.value = e.response?.data?.error || "Échec de l'enregistrement";
+  } finally {
+    saving.value = false;
+  }
+}
+
 async function upload() {
   uploadError.value = '';
   if (!nativeFile.value) {
     uploadError.value = 'Sélectionnez le fichier SolidWorks natif (ou PDF) à envoyer';
     return;
   }
+  if (!previewFile.value) {
+    uploadError.value = "Exportez et sélectionnez une image d'aperçu (SolidWorks : Fichier > Enregistrer sous > PNG/JPEG)";
+    return;
+  }
   const form = new FormData();
   form.append('file', nativeFile.value);
-  if (previewFile.value) form.append('previewImage', previewFile.value);
+  form.append('previewImage', previewFile.value);
 
   uploading.value = true;
   try {
@@ -81,6 +123,34 @@ async function upload() {
   }
 }
 
+function startAddPreview(docId) {
+  addingPreviewFor.value = docId;
+  previewOnlyFile.value = null;
+  previewOnlyError.value = '';
+}
+
+async function saveAddPreview(docId) {
+  if (!previewOnlyFile.value) {
+    previewOnlyError.value = 'Sélectionnez une image';
+    return;
+  }
+  const form = new FormData();
+  form.append('previewImage', previewOnlyFile.value);
+  previewOnlySaving.value = true;
+  previewOnlyError.value = '';
+  try {
+    await api.patch(`/api/documents/${docId}/preview`, form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    addingPreviewFor.value = null;
+    await load();
+  } catch (e) {
+    previewOnlyError.value = e.response?.data?.error || "Échec de l'envoi";
+  } finally {
+    previewOnlySaving.value = false;
+  }
+}
+
 onMounted(load);
 </script>
 
@@ -92,7 +162,10 @@ onMounted(load);
     <template v-else-if="task">
       <div class="toolbar">
         <h1>{{ task.title }}</h1>
-        <span class="badge" :class="task.status">{{ statusLabel(task.status) }}</span>
+        <div style="display:flex; gap:10px; align-items:center">
+          <span class="badge" :class="task.status">{{ statusLabel(task.status) }}</span>
+          <button v-if="canEdit && !editing" class="secondary" @click="startEdit">Modifier</button>
+        </div>
       </div>
 
       <div class="card">
@@ -112,12 +185,49 @@ onMounted(load);
       </div>
 
       <div class="card">
-        <p><strong>Client :</strong> {{ task.client_name }}</p>
-        <p><strong>Assigné à :</strong> {{ task.assigned_user_name }}</p>
-        <p><strong>Étape actuelle :</strong> {{ task.current_step || '—' }}</p>
-        <p><strong>Étape suivante :</strong> {{ task.next_step || '—' }}</p>
-        <p><strong>Date prévue :</strong> {{ formatDueDate(task.due_date) }}</p>
-        <p class="muted">Dernière mise à jour {{ formatDate(task.updated_at) }}</p>
+        <template v-if="!editing">
+          <p><strong>Client :</strong> {{ task.client_name }}</p>
+          <p><strong>Assigné à :</strong> {{ task.assigned_user_name }}</p>
+          <p><strong>Étape actuelle :</strong> {{ task.current_step || '—' }}</p>
+          <p><strong>Étape suivante :</strong> {{ task.next_step || '—' }}</p>
+          <p><strong>Date prévue :</strong> {{ formatDueDate(task.due_date) }}</p>
+          <p class="muted">Dernière mise à jour {{ formatDate(task.updated_at) }}</p>
+        </template>
+
+        <form v-else @submit.prevent="saveEdit">
+          <div class="form-row">
+            <div class="field">
+              <label>Titre</label>
+              <input v-model="editDraft.title" required />
+            </div>
+            <div class="field">
+              <label>Statut</label>
+              <select v-model="editDraft.status">
+                <option value="active">Actif</option>
+                <option value="paused">En pause</option>
+                <option value="done">Terminé</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="field">
+              <label>Étape actuelle</label>
+              <select v-model="editDraft.current_step">
+                <option value="">—</option>
+                <option v-for="s in WORKFLOW_STEPS" :key="s" :value="s">{{ s }}</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>Date prévue</label>
+              <input v-model="editDraft.due_date" type="date" />
+            </div>
+          </div>
+          <p v-if="saveError" class="error-text">{{ saveError }}</p>
+          <div style="display:flex; gap:8px">
+            <button type="submit" :disabled="saving">{{ saving ? 'Enregistrement…' : 'Enregistrer' }}</button>
+            <button type="button" class="secondary" @click="editing = false">Annuler</button>
+          </div>
+        </form>
       </div>
 
       <div class="card">
@@ -129,6 +239,17 @@ onMounted(load);
           <div style="flex:1">
             <div>{{ doc.original_filename }}</div>
             <div class="muted">{{ doc.file_type.toUpperCase() }} · envoyé par {{ doc.uploaded_by }} · {{ formatDate(doc.uploaded_at) }}</div>
+            <template v-if="!doc.preview_image_path && canEdit">
+              <div v-if="addingPreviewFor !== doc.id">
+                <button type="button" class="link-button" @click="startAddPreview(doc.id)">+ ajouter un aperçu</button>
+              </div>
+              <div v-else style="display:flex; gap:8px; align-items:center; margin-top:6px">
+                <input type="file" @change="previewOnlyFile = $event.target.files[0]" />
+                <button type="button" :disabled="previewOnlySaving" @click="saveAddPreview(doc.id)">{{ previewOnlySaving ? 'Envoi…' : 'Envoyer' }}</button>
+                <button type="button" class="secondary" @click="addingPreviewFor = null">Annuler</button>
+              </div>
+              <p v-if="addingPreviewFor === doc.id && previewOnlyError" class="error-text">{{ previewOnlyError }}</p>
+            </template>
           </div>
           <a :href="downloadUrl(doc)">Télécharger</a>
         </div>
@@ -140,7 +261,7 @@ onMounted(load);
               <input type="file" @change="nativeFile = $event.target.files[0]" />
             </div>
             <div class="field">
-              <label>Image d'aperçu (.png / .jpg)</label>
+              <label>Image d'aperçu (.png / .jpg) — obligatoire</label>
               <input type="file" @change="previewFile = $event.target.files[0]" />
             </div>
           </div>

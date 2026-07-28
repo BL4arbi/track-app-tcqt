@@ -114,6 +114,11 @@ th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--bo
 th { color: var(--text-h); font-weight: 600; background: var(--bg-subtle); }
 tr:hover td { background: var(--bg-subtle); }
 
+.dashboard-table td { vertical-align: middle; }
+.clickable-row { cursor: pointer; transition: background 0.15s; }
+.clickable-row:hover td { background: var(--accent-bg); }
+.due-overdue { color: var(--danger); font-weight: 600; }
+
 .badge {
   display: inline-block;
   padding: 2px 8px;
