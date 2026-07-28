@@ -20,6 +20,7 @@ function logout() {
       <nav class="topbar-nav">
         <RouterLink to="/">Dashboard</RouterLink>
         <RouterLink to="/my-tasks">My Tasks</RouterLink>
+        <RouterLink v-if="auth.isManager" to="/admin">Admin</RouterLink>
       </nav>
       <div class="topbar-user">
         <span>{{ auth.user?.full_name }}</span>

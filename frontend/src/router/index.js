@@ -9,11 +9,13 @@ import SignupView from '../views/SignupView.vue';
 import VerifyEmailView from '../views/VerifyEmailView.vue';
 import ForgotPasswordView from '../views/ForgotPasswordView.vue';
 import ResetPasswordView from '../views/ResetPasswordView.vue';
+import AdminView from '../views/AdminView.vue';
 
 const routes = [
   { path: '/', name: 'dashboard', component: DashboardView, meta: { requiresAuth: true } },
   { path: '/my-tasks', name: 'my-tasks', component: MyTasksView, meta: { requiresAuth: true } },
   { path: '/tasks/:id', name: 'task-detail', component: TaskDetailView, meta: { requiresAuth: true } },
+  { path: '/admin', name: 'admin', component: AdminView, meta: { requiresAuth: true, requiresManager: true } },
   { path: '/login', name: 'login', component: LoginView },
   { path: '/signup', name: 'signup', component: SignupView },
   { path: '/verify-email', name: 'verify-email', component: VerifyEmailView },
@@ -30,6 +32,9 @@ router.beforeEach((to) => {
   const auth = useAuthStore();
   if (to.meta.requiresAuth && !auth.isAuthenticated) {
     return { name: 'login', query: { redirect: to.fullPath } };
+  }
+  if (to.meta.requiresManager && !auth.isManager) {
+    return { name: 'dashboard' };
   }
   return true;
 });

@@ -32,10 +32,15 @@ router.post('/signup', async (req, res) => {
   }
 
   const password_hash = await bcrypt.hash(password, 10);
+  // The very first account on a fresh install becomes the manager/admin —
+  // there's no other way to bootstrap admin access without DB access.
+  const { rows: countRows } = await pool.query('SELECT COUNT(*)::int AS count FROM users');
+  const role = countRows[0].count === 0 ? 'manager' : 'engineer';
+
   const { rows } = await pool.query(
-    `INSERT INTO users (full_name, company_email, password_hash)
-     VALUES ($1, $2, $3) RETURNING id, full_name, company_email, role, email_verified`,
-    [full_name, email, password_hash]
+    `INSERT INTO users (full_name, company_email, password_hash, role)
+     VALUES ($1, $2, $3, $4) RETURNING id, full_name, company_email, role, email_verified`,
+    [full_name, email, password_hash, role]
   );
   const user = rows[0];
 

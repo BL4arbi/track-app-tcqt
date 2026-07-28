@@ -28,7 +28,7 @@ npm run dev            # http://localhost:4000
 ```
 
 Notes on `.env`:
-- `ALLOWED_EMAIL_DOMAIN` restricts signup to `@yourdomain.com` — set it to your real domain.
+- `ALLOWED_EMAIL_DOMAIN` restricts signup to `@tacquet-industries.fr`.
 - If `SMTP_HOST` is left blank, verification/reset emails are printed to the console instead of
   sent, which is convenient for local dev — copy the `token=...` link from the log.
 - `UPLOAD_DIR` is where native SolidWorks files and preview images are stored on disk.
