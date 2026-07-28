@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { pool } from '../db/pool.js';
 import { requireAuth } from '../middleware/auth.js';
+import { WORKFLOW_STEPS, nextWorkflowStep } from '../utils/workflowSteps.js';
 
 const router = Router();
 router.use(requireAuth);
@@ -74,10 +75,17 @@ router.post('/', async (req, res) => {
   // Only managers may assign work to someone other than themselves.
   const ownerId = assigned_user_id && req.user.role === 'manager' ? assigned_user_id : req.user.id;
 
+  // The chronology is fixed — derive next_step authoritatively from
+  // current_step rather than trusting whatever the client sent. Only fall
+  // back to the client-supplied value for unrecognized/legacy free text.
+  const derivedNextStep = WORKFLOW_STEPS.includes(current_step)
+    ? nextWorkflowStep(current_step)
+    : (next_step || null);
+
   const { rows } = await pool.query(
     `INSERT INTO tasks (client_id, assigned_user_id, title, current_step, next_step, due_date)
      VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-    [client_id, ownerId, title, current_step || null, next_step || null, due_date || null]
+    [client_id, ownerId, title, current_step || null, derivedNextStep, due_date || null]
   );
   const taskId = rows[0].id;
 
@@ -100,10 +108,13 @@ router.patch('/:id', async (req, res) => {
   if (!canEdit) return res.status(403).json({ error: "Vous ne pouvez modifier que vos propres tâches" });
 
   const { title, current_step, next_step, due_date, status, client_id, assigned_user_id } = req.body || {};
+  const resolvedCurrentStep = current_step ?? existing.current_step;
   const next = {
     title: title ?? existing.title,
-    current_step: current_step ?? existing.current_step,
-    next_step: next_step ?? existing.next_step,
+    current_step: resolvedCurrentStep,
+    next_step: WORKFLOW_STEPS.includes(resolvedCurrentStep)
+      ? nextWorkflowStep(resolvedCurrentStep)
+      : (next_step ?? existing.next_step),
     due_date: due_date !== undefined ? (due_date || null) : existing.due_date,
     status: status ?? existing.status,
     client_id: client_id ?? existing.client_id,

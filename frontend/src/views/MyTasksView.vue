@@ -2,6 +2,7 @@
 import { ref, onMounted, reactive } from 'vue';
 import { api } from '../api/client';
 import ClientSelect from '../components/ClientSelect.vue';
+import { WORKFLOW_STEPS } from '../utils/workflowSteps';
 
 const tasks = ref([]);
 const loading = ref(true);
@@ -9,7 +10,7 @@ const error = ref('');
 const editingId = ref(null);
 const editDraft = reactive({});
 
-const newTask = reactive({ client_id: '', title: '', current_step: '', next_step: '', due_date: '' });
+const newTask = reactive({ client_id: '', title: '', current_step: '', due_date: '' });
 const creating = ref(false);
 const createError = ref('');
 
@@ -40,7 +41,6 @@ async function createTask() {
     newTask.client_id = '';
     newTask.title = '';
     newTask.current_step = '';
-    newTask.next_step = '';
     newTask.due_date = '';
     await load();
   } catch (e) {
@@ -55,7 +55,6 @@ function startEdit(t) {
   Object.assign(editDraft, {
     title: t.title,
     current_step: t.current_step || '',
-    next_step: t.next_step || '',
     due_date: t.due_date || '',
     status: t.status,
   });
@@ -94,11 +93,10 @@ onMounted(load);
         <div class="form-row">
           <div class="field">
             <label>Étape actuelle</label>
-            <input v-model="newTask.current_step" placeholder="ex. Modélisation 3D" />
-          </div>
-          <div class="field">
-            <label>Étape suivante</label>
-            <input v-model="newTask.next_step" placeholder="ex. Commande de la pièce" />
+            <select v-model="newTask.current_step">
+              <option value="">—</option>
+              <option v-for="s in WORKFLOW_STEPS" :key="s" :value="s">{{ s }}</option>
+            </select>
           </div>
           <div class="field">
             <label>Date prévue</label>
@@ -140,8 +138,13 @@ onMounted(load);
           <tr v-else>
             <td>{{ t.client_name }}</td>
             <td><input v-model="editDraft.title" /></td>
-            <td><input v-model="editDraft.current_step" /></td>
-            <td><input v-model="editDraft.next_step" /></td>
+            <td>
+              <select v-model="editDraft.current_step">
+                <option value="">—</option>
+                <option v-for="s in WORKFLOW_STEPS" :key="s" :value="s">{{ s }}</option>
+              </select>
+            </td>
+            <td class="muted">(auto)</td>
             <td><input v-model="editDraft.due_date" type="date" /></td>
             <td>
               <select v-model="editDraft.status">

@@ -205,3 +205,48 @@ tr:hover td { background: var(--bg-subtle); }
   white-space: nowrap;
 }
 .calendar-chip:hover { opacity: 0.85; text-decoration: none; }
+
+/* Workflow chronology stepper */
+.stepper {
+  display: flex;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.stepper-step {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 6px;
+  position: relative;
+}
+.stepper-step:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  top: 14px;
+  left: calc(50% + 20px);
+  right: calc(-50% + 20px);
+  height: 2px;
+  background: var(--border);
+}
+.stepper-step.done:not(:last-child)::after { background: var(--success); }
+.stepper-dot {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  border: 2px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  z-index: 1;
+}
+.stepper-step.done .stepper-dot { border-color: var(--success); background: var(--success); color: #fff; }
+.stepper-step.current .stepper-dot { border-color: var(--accent); background: var(--accent); color: #fff; }
+.stepper-label { font-size: 12px; max-width: 100px; color: var(--text); }
+.stepper-step.current .stepper-label { color: var(--text-h); font-weight: 600; }

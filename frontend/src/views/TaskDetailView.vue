@@ -1,7 +1,8 @@
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import { useRoute } from 'vue-router';
 import { api } from '../api/client';
+import { WORKFLOW_STEPS } from '../utils/workflowSteps';
 
 const route = useRoute();
 const task = ref(null);
@@ -28,6 +29,8 @@ function formatDueDate(dateKey) {
 function statusLabel(s) {
   return s ? STATUS_LABELS[s] : '—';
 }
+
+const currentStepIndex = computed(() => task.value ? WORKFLOW_STEPS.indexOf(task.value.current_step) : -1);
 
 function previewUrl(doc) {
   if (!doc.preview_image_path) return null;
@@ -93,6 +96,22 @@ onMounted(load);
       </div>
 
       <div class="card">
+        <h2>Chronologie</h2>
+        <div v-if="currentStepIndex === -1" class="muted">Étape libre (hors chronologie standard) : {{ task.current_step || '—' }}</div>
+        <ol v-else class="stepper">
+          <li
+            v-for="(s, i) in WORKFLOW_STEPS"
+            :key="s"
+            class="stepper-step"
+            :class="{ done: i < currentStepIndex, current: i === currentStepIndex, upcoming: i > currentStepIndex }"
+          >
+            <span class="stepper-dot">{{ i < currentStepIndex ? '✓' : i + 1 }}</span>
+            <span class="stepper-label">{{ s }}</span>
+          </li>
+        </ol>
+      </div>
+
+      <div class="card">
         <p><strong>Client :</strong> {{ task.client_name }}</p>
         <p><strong>Assigné à :</strong> {{ task.assigned_user_name }}</p>
         <p><strong>Étape actuelle :</strong> {{ task.current_step || '—' }}</p>
@@ -118,11 +137,11 @@ onMounted(load);
           <div class="form-row">
             <div class="field">
               <label>Fichier natif (.sldprt / .sldasm / .slddrw / .pdf)</label>
-              <input type="file" accept=".sldprt,.sldasm,.slddrw,.pdf" @change="nativeFile = $event.target.files[0]" />
+              <input type="file" @change="nativeFile = $event.target.files[0]" />
             </div>
             <div class="field">
               <label>Image d'aperçu (.png / .jpg)</label>
-              <input type="file" accept=".png,.jpg,.jpeg" @change="previewFile = $event.target.files[0]" />
+              <input type="file" @change="previewFile = $event.target.files[0]" />
             </div>
           </div>
           <p v-if="uploadError" class="error-text">{{ uploadError }}</p>
