@@ -21,7 +21,7 @@ async function submit() {
     message.value = data.message;
     setTimeout(() => router.push({ name: 'login' }), 1500);
   } catch (e) {
-    error.value = e.response?.data?.error || 'Reset failed';
+    error.value = e.response?.data?.error || 'Échec de la réinitialisation';
   } finally {
     loading.value = false;
   }
@@ -30,14 +30,14 @@ async function submit() {
 
 <template>
   <div class="auth-page">
-    <h1>Reset password</h1>
+    <h1>Réinitialiser le mot de passe</h1>
     <form v-if="!message" @submit.prevent="submit">
       <div class="field">
-        <label for="password">New password</label>
+        <label for="password">Nouveau mot de passe</label>
         <input id="password" v-model="new_password" type="password" minlength="8" required autocomplete="new-password" />
       </div>
       <p v-if="error" class="error-text">{{ error }}</p>
-      <button type="submit" :disabled="loading" style="width:100%">{{ loading ? 'Saving…' : 'Set new password' }}</button>
+      <button type="submit" :disabled="loading" style="width:100%">{{ loading ? 'Enregistrement…' : 'Définir le nouveau mot de passe' }}</button>
     </form>
     <p v-else class="success-text">{{ message }}</p>
   </div>

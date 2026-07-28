@@ -46,13 +46,13 @@ a:hover { text-decoration: underline; }
   align-items: center;
   gap: 24px;
   padding: 12px 24px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 3px solid var(--accent);
   background: var(--bg-subtle);
 }
 .topbar-brand { font-weight: 700; color: var(--text-h); }
 .topbar-nav { display: flex; gap: 16px; flex: 1; }
-.topbar-nav a { color: var(--text); }
-.topbar-nav a.router-link-exact-active { color: var(--accent); font-weight: 600; }
+.topbar-nav a { color: var(--text); padding-bottom: 2px; border-bottom: 2px solid transparent; }
+.topbar-nav a.router-link-exact-active { color: var(--accent); font-weight: 600; border-bottom-color: var(--accent); }
 .topbar-user { display: flex; align-items: center; gap: 12px; font-size: 14px; }
 
 .page { flex: 1; padding: 24px; max-width: 1100px; width: 100%; margin: 0 auto; }
@@ -145,3 +145,63 @@ tr:hover td { background: var(--bg-subtle); }
 
 .doc-row { display: flex; gap: 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--border); }
 .doc-row:last-child { border-bottom: none; }
+
+/* Per-user identity chips — color always paired with initials/name, never alone. */
+.user-chip { display: inline-flex; align-items: center; gap: 6px; }
+.user-avatar {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
+  color: #fff;
+  flex-shrink: 0;
+}
+
+/* Calendar */
+.legend { display: flex; flex-wrap: wrap; gap: 14px; margin-bottom: 16px; }
+.legend-item { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
+.legend-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 1px;
+  background: var(--border);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.calendar-weekday {
+  background: var(--bg-subtle);
+  padding: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-h);
+  text-align: center;
+}
+.calendar-cell {
+  background: var(--bg);
+  min-height: 96px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.calendar-cell--out { background: var(--bg-subtle); opacity: 0.5; }
+.calendar-cell--today { box-shadow: inset 0 0 0 2px var(--accent); }
+.calendar-cell-day { font-size: 12px; font-weight: 600; color: var(--text-h); }
+.calendar-chip {
+  display: block;
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: #fff;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.calendar-chip:hover { opacity: 0.85; text-decoration: none; }

@@ -10,10 +10,12 @@ import VerifyEmailView from '../views/VerifyEmailView.vue';
 import ForgotPasswordView from '../views/ForgotPasswordView.vue';
 import ResetPasswordView from '../views/ResetPasswordView.vue';
 import AdminView from '../views/AdminView.vue';
+import CalendarView from '../views/CalendarView.vue';
 
 const routes = [
   { path: '/', name: 'dashboard', component: DashboardView, meta: { requiresAuth: true } },
   { path: '/my-tasks', name: 'my-tasks', component: MyTasksView, meta: { requiresAuth: true } },
+  { path: '/calendar', name: 'calendar', component: CalendarView, meta: { requiresAuth: true } },
   { path: '/tasks/:id', name: 'task-detail', component: TaskDetailView, meta: { requiresAuth: true } },
   { path: '/admin', name: 'admin', component: AdminView, meta: { requiresAuth: true, requiresManager: true } },
   { path: '/login', name: 'login', component: LoginView },

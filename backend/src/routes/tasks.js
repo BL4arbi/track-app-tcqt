@@ -6,7 +6,7 @@ const router = Router();
 router.use(requireAuth);
 
 const TASK_SELECT = `
-  SELECT t.id, t.title, t.current_step, t.next_step, t.status,
+  SELECT t.id, t.title, t.current_step, t.next_step, t.due_date, t.status,
          t.created_at, t.updated_at,
          t.client_id, c.name AS client_name,
          t.assigned_user_id, u.full_name AS assigned_user_name
@@ -32,10 +32,18 @@ router.get('/mine', async (req, res) => {
   res.json({ tasks: rows });
 });
 
+// Team calendar: every task with an expected date, any status.
+router.get('/calendar', async (_req, res) => {
+  const { rows } = await pool.query(
+    `${TASK_SELECT} WHERE t.due_date IS NOT NULL ORDER BY t.due_date`
+  );
+  res.json({ tasks: rows });
+});
+
 router.get('/:id', async (req, res) => {
   const { rows } = await pool.query(`${TASK_SELECT} WHERE t.id = $1`, [req.params.id]);
   const task = rows[0];
-  if (!task) return res.status(404).json({ error: 'Task not found' });
+  if (!task) return res.status(404).json({ error: "Tâche introuvable" });
 
   const [{ rows: history }, { rows: documents }] = await Promise.all([
     pool.query(
@@ -58,16 +66,18 @@ router.get('/:id', async (req, res) => {
 });
 
 router.post('/', async (req, res) => {
-  const { client_id, title, current_step, next_step, assigned_user_id } = req.body || {};
-  if (!client_id || !title) return res.status(400).json({ error: 'client_id and title are required' });
+  const { client_id, title, current_step, next_step, due_date, assigned_user_id } = req.body || {};
+  if (!client_id || !title) {
+    return res.status(400).json({ error: "Le client et le titre sont obligatoires" });
+  }
 
   // Only managers may assign work to someone other than themselves.
   const ownerId = assigned_user_id && req.user.role === 'manager' ? assigned_user_id : req.user.id;
 
   const { rows } = await pool.query(
-    `INSERT INTO tasks (client_id, assigned_user_id, title, current_step, next_step)
-     VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-    [client_id, ownerId, title, current_step || null, next_step || null]
+    `INSERT INTO tasks (client_id, assigned_user_id, title, current_step, next_step, due_date)
+     VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+    [client_id, ownerId, title, current_step || null, next_step || null, due_date || null]
   );
   const taskId = rows[0].id;
 
@@ -84,26 +94,27 @@ router.post('/', async (req, res) => {
 router.patch('/:id', async (req, res) => {
   const { rows: existingRows } = await pool.query('SELECT * FROM tasks WHERE id = $1', [req.params.id]);
   const existing = existingRows[0];
-  if (!existing) return res.status(404).json({ error: 'Task not found' });
+  if (!existing) return res.status(404).json({ error: "Tâche introuvable" });
 
   const canEdit = req.user.role === 'manager' || existing.assigned_user_id === req.user.id;
-  if (!canEdit) return res.status(403).json({ error: 'You can only edit your own tasks' });
+  if (!canEdit) return res.status(403).json({ error: "Vous ne pouvez modifier que vos propres tâches" });
 
-  const { title, current_step, next_step, status, client_id, assigned_user_id } = req.body || {};
+  const { title, current_step, next_step, due_date, status, client_id, assigned_user_id } = req.body || {};
   const next = {
     title: title ?? existing.title,
     current_step: current_step ?? existing.current_step,
     next_step: next_step ?? existing.next_step,
+    due_date: due_date !== undefined ? (due_date || null) : existing.due_date,
     status: status ?? existing.status,
     client_id: client_id ?? existing.client_id,
     assigned_user_id: req.user.role === 'manager' ? (assigned_user_id ?? existing.assigned_user_id) : existing.assigned_user_id,
   };
 
   await pool.query(
-    `UPDATE tasks SET title = $1, current_step = $2, next_step = $3, status = $4,
-                       client_id = $5, assigned_user_id = $6
-     WHERE id = $7`,
-    [next.title, next.current_step, next.next_step, next.status, next.client_id, next.assigned_user_id, existing.id]
+    `UPDATE tasks SET title = $1, current_step = $2, next_step = $3, due_date = $4,
+                       status = $5, client_id = $6, assigned_user_id = $7
+     WHERE id = $8`,
+    [next.title, next.current_step, next.next_step, next.due_date, next.status, next.client_id, next.assigned_user_id, existing.id]
   );
 
   const stepChanged = next.current_step !== existing.current_step;

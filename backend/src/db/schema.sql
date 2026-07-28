@@ -24,10 +24,13 @@ CREATE TABLE IF NOT EXISTS tasks (
   title            TEXT NOT NULL,
   current_step     TEXT,
   next_step        TEXT,
+  due_date         DATE,
   status           TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'paused', 'done')),
   created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at       TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS due_date DATE;
 
 CREATE TABLE IF NOT EXISTS task_history (
   id          SERIAL PRIMARY KEY,
@@ -53,6 +56,7 @@ CREATE TABLE IF NOT EXISTS documents (
 
 CREATE INDEX IF NOT EXISTS idx_tasks_assigned_user ON tasks(assigned_user_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
+CREATE INDEX IF NOT EXISTS idx_tasks_due_date ON tasks(due_date);
 CREATE INDEX IF NOT EXISTS idx_task_history_task ON task_history(task_id);
 CREATE INDEX IF NOT EXISTS idx_documents_task ON documents(task_id);
 

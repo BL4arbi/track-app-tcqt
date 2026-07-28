@@ -11,6 +11,8 @@ const loading = ref(true);
 const error = ref('');
 const savingId = ref(null);
 
+const STATUS_LABELS = { active: 'Actif', paused: 'En pause', done: 'Terminé' };
+
 async function load() {
   loading.value = true;
   error.value = '';
@@ -22,7 +24,7 @@ async function load() {
     overview.value = overviewRes.data;
     users.value = usersRes.data.users;
   } catch (e) {
-    error.value = e.response?.data?.error || 'Failed to load admin data';
+    error.value = e.response?.data?.error || "Échec du chargement des données d'administration";
   } finally {
     loading.value = false;
   }
@@ -34,14 +36,14 @@ async function updateUser(user, changes) {
     const { data } = await api.patch(`/api/users/${user.id}`, changes);
     Object.assign(user, data.user);
   } catch (e) {
-    error.value = e.response?.data?.error || 'Failed to update user';
+    error.value = e.response?.data?.error || "Échec de la mise à jour de l'utilisateur";
   } finally {
     savingId.value = null;
   }
 }
 
 function formatDate(iso) {
-  return new Date(iso).toLocaleDateString();
+  return new Date(iso).toLocaleDateString('fr-FR');
 }
 
 onMounted(load);
@@ -50,32 +52,32 @@ onMounted(load);
 <template>
   <div>
     <h1>Admin</h1>
-    <p v-if="loading" class="muted">Loading…</p>
+    <p v-if="loading" class="muted">Chargement…</p>
     <p v-else-if="error" class="error-text">{{ error }}</p>
 
     <template v-else>
       <div class="card">
-        <h2>Overview</h2>
+        <h2>Vue d'ensemble</h2>
         <div class="form-row" style="margin-bottom:16px">
-          <div class="field"><label>Users</label><div>{{ overview.totals.active_users }} active / {{ overview.totals.total_users }} total</div></div>
+          <div class="field"><label>Utilisateurs</label><div>{{ overview.totals.active_users }} actifs / {{ overview.totals.total_users }} au total</div></div>
           <div class="field"><label>Clients</label><div>{{ overview.totals.total_clients }}</div></div>
-          <div class="field"><label>Tasks</label><div>{{ overview.totals.total_tasks }}</div></div>
+          <div class="field"><label>Tâches</label><div>{{ overview.totals.total_tasks }}</div></div>
         </div>
 
         <div class="form-row">
           <div style="flex:1">
-            <h2 style="font-size:14px">Tasks by status</h2>
+            <h2 style="font-size:14px">Tâches par statut</h2>
             <table>
               <tbody>
                 <tr v-for="s in overview.tasks_by_status" :key="s.status">
-                  <td><span class="badge" :class="s.status">{{ s.status }}</span></td>
+                  <td><span class="badge" :class="s.status">{{ STATUS_LABELS[s.status] }}</span></td>
                   <td>{{ s.count }}</td>
                 </tr>
               </tbody>
             </table>
           </div>
           <div style="flex:1">
-            <h2 style="font-size:14px">Active tasks by client</h2>
+            <h2 style="font-size:14px">Tâches actives par client</h2>
             <table>
               <tbody>
                 <tr v-for="c in overview.tasks_by_client" :key="c.client_name">
@@ -86,7 +88,7 @@ onMounted(load);
             </table>
           </div>
           <div style="flex:1">
-            <h2 style="font-size:14px">Active tasks per person</h2>
+            <h2 style="font-size:14px">Tâches actives par personne</h2>
             <table>
               <tbody>
                 <tr v-for="u in overview.tasks_by_user" :key="u.full_name">
@@ -98,21 +100,21 @@ onMounted(load);
           </div>
         </div>
         <p class="muted" style="margin-top:12px">
-          Deeper stats (time per step, bottlenecks) come later once there's more history — see the phase 2 notes.
+          Des statistiques plus poussées (temps par étape, goulots d'étranglement) arriveront plus tard, une fois qu'il y aura plus d'historique.
         </p>
       </div>
 
       <div class="card">
-        <h2>Team ({{ users.length }})</h2>
+        <h2>Équipe ({{ users.length }})</h2>
         <table>
           <thead>
             <tr>
-              <th>Name</th>
+              <th>Nom</th>
               <th>Email</th>
-              <th>Role</th>
-              <th>Verified</th>
-              <th>Active</th>
-              <th>Joined</th>
+              <th>Rôle</th>
+              <th>Vérifié</th>
+              <th>Actif</th>
+              <th>Arrivée</th>
             </tr>
           </thead>
           <tbody>
@@ -125,11 +127,11 @@ onMounted(load);
                   :disabled="savingId === u.id || u.id === auth.user.id"
                   @change="updateUser(u, { role: $event.target.value })"
                 >
-                  <option value="engineer">engineer</option>
-                  <option value="manager">manager</option>
+                  <option value="engineer">Ingénieur</option>
+                  <option value="manager">Manager</option>
                 </select>
               </td>
-              <td>{{ u.email_verified ? 'Yes' : 'No' }}</td>
+              <td>{{ u.email_verified ? 'Oui' : 'Non' }}</td>
               <td>
                 <label style="display:flex; align-items:center; gap:6px; font-weight:normal">
                   <input
@@ -138,7 +140,7 @@ onMounted(load);
                     :disabled="savingId === u.id || u.id === auth.user.id"
                     @change="updateUser(u, { active: $event.target.checked })"
                   />
-                  {{ u.active ? 'Active' : 'Deactivated' }}
+                  {{ u.active ? 'Actif' : 'Désactivé' }}
                 </label>
               </td>
               <td>{{ formatDate(u.created_at) }}</td>

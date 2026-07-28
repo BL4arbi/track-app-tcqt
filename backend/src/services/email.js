@@ -34,19 +34,19 @@ export async function sendMail({ to, subject, html }) {
 export function verificationEmail(token) {
   const link = `${process.env.APP_BASE_URL}/verify-email?token=${token}`;
   return {
-    subject: 'Verify your SolidWorks Tracker account',
-    html: `<p>Welcome to SolidWorks Tracker. Click the link below to verify your account:</p>
+    subject: 'Vérifiez votre compte SolidWorks Tracker',
+    html: `<p>Bienvenue sur SolidWorks Tracker. Cliquez sur le lien ci-dessous pour vérifier votre compte :</p>
            <p><a href="${link}">${link}</a></p>
-           <p>This link expires in 24 hours.</p>`,
+           <p>Ce lien expire dans 24 heures.</p>`,
   };
 }
 
 export function resetPasswordEmail(token) {
   const link = `${process.env.APP_BASE_URL}/reset-password?token=${token}`;
   return {
-    subject: 'Reset your SolidWorks Tracker password',
-    html: `<p>Click the link below to reset your password:</p>
+    subject: 'Réinitialisation de votre mot de passe SolidWorks Tracker',
+    html: `<p>Cliquez sur le lien ci-dessous pour réinitialiser votre mot de passe :</p>
            <p><a href="${link}">${link}</a></p>
-           <p>This link expires in 1 hour. If you didn't request this, ignore this email.</p>`,
+           <p>Ce lien expire dans 1 heure. Si vous n'êtes pas à l'origine de cette demande, ignorez cet email.</p>`,
   };
 }

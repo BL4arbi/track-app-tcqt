@@ -15,8 +15,18 @@ const previewFile = ref(null);
 const uploadError = ref('');
 const uploading = ref(false);
 
+const STATUS_LABELS = { active: 'Actif', paused: 'En pause', done: 'Terminé' };
+
 function formatDate(iso) {
-  return new Date(iso).toLocaleString();
+  return new Date(iso).toLocaleString('fr-FR');
+}
+function formatDueDate(dateKey) {
+  if (!dateKey) return '—';
+  const [y, m, d] = dateKey.split('-');
+  return `${d}/${m}/${y}`;
+}
+function statusLabel(s) {
+  return s ? STATUS_LABELS[s] : '—';
 }
 
 function previewUrl(doc) {
@@ -37,7 +47,7 @@ async function load() {
     history.value = data.history;
     documents.value = data.documents;
   } catch (e) {
-    error.value = e.response?.data?.error || 'Failed to load task';
+    error.value = e.response?.data?.error || 'Échec du chargement de la tâche';
   } finally {
     loading.value = false;
   }
@@ -46,7 +56,7 @@ async function load() {
 async function upload() {
   uploadError.value = '';
   if (!nativeFile.value) {
-    uploadError.value = 'Select the native SolidWorks file (or PDF) to upload';
+    uploadError.value = 'Sélectionnez le fichier SolidWorks natif (ou PDF) à envoyer';
     return;
   }
   const form = new FormData();
@@ -62,7 +72,7 @@ async function upload() {
     previewFile.value = null;
     await load();
   } catch (e) {
-    uploadError.value = e.response?.data?.error || 'Upload failed';
+    uploadError.value = e.response?.data?.error || "Échec de l'envoi";
   } finally {
     uploading.value = false;
   }
@@ -73,65 +83,66 @@ onMounted(load);
 
 <template>
   <div>
-    <p v-if="loading" class="muted">Loading…</p>
+    <p v-if="loading" class="muted">Chargement…</p>
     <p v-else-if="error" class="error-text">{{ error }}</p>
 
     <template v-else-if="task">
       <div class="toolbar">
         <h1>{{ task.title }}</h1>
-        <span class="badge" :class="task.status">{{ task.status }}</span>
+        <span class="badge" :class="task.status">{{ statusLabel(task.status) }}</span>
       </div>
 
       <div class="card">
-        <p><strong>Client:</strong> {{ task.client_name }}</p>
-        <p><strong>Assigned to:</strong> {{ task.assigned_user_name }}</p>
-        <p><strong>Current step:</strong> {{ task.current_step || '—' }}</p>
-        <p><strong>Next step:</strong> {{ task.next_step || '—' }}</p>
-        <p class="muted">Last updated {{ formatDate(task.updated_at) }}</p>
+        <p><strong>Client :</strong> {{ task.client_name }}</p>
+        <p><strong>Assigné à :</strong> {{ task.assigned_user_name }}</p>
+        <p><strong>Étape actuelle :</strong> {{ task.current_step || '—' }}</p>
+        <p><strong>Étape suivante :</strong> {{ task.next_step || '—' }}</p>
+        <p><strong>Date prévue :</strong> {{ formatDueDate(task.due_date) }}</p>
+        <p class="muted">Dernière mise à jour {{ formatDate(task.updated_at) }}</p>
       </div>
 
       <div class="card">
         <h2>Documents</h2>
-        <div v-if="!documents.length" class="muted">No documents uploaded yet.</div>
+        <div v-if="!documents.length" class="muted">Aucun document envoyé pour l'instant.</div>
         <div v-for="doc in documents" :key="doc.id" class="doc-row">
           <img v-if="previewUrl(doc)" :src="previewUrl(doc)" class="preview-thumb" :alt="doc.original_filename" />
-          <div v-else class="preview-thumb" style="display:flex;align-items:center;justify-content:center;font-size:11px" >no preview</div>
+          <div v-else class="preview-thumb" style="display:flex;align-items:center;justify-content:center;font-size:11px" >aucun aperçu</div>
           <div style="flex:1">
             <div>{{ doc.original_filename }}</div>
-            <div class="muted">{{ doc.file_type.toUpperCase() }} · uploaded by {{ doc.uploaded_by }} · {{ formatDate(doc.uploaded_at) }}</div>
+            <div class="muted">{{ doc.file_type.toUpperCase() }} · envoyé par {{ doc.uploaded_by }} · {{ formatDate(doc.uploaded_at) }}</div>
           </div>
-          <a :href="downloadUrl(doc)">Download</a>
+          <a :href="downloadUrl(doc)">Télécharger</a>
         </div>
 
         <form @submit.prevent="upload" style="margin-top:16px">
           <div class="form-row">
             <div class="field">
-              <label>Native file (.sldprt / .sldasm / .slddrw / .pdf)</label>
+              <label>Fichier natif (.sldprt / .sldasm / .slddrw / .pdf)</label>
               <input type="file" accept=".sldprt,.sldasm,.slddrw,.pdf" @change="nativeFile = $event.target.files[0]" />
             </div>
             <div class="field">
-              <label>Preview image (.png / .jpg)</label>
+              <label>Image d'aperçu (.png / .jpg)</label>
               <input type="file" accept=".png,.jpg,.jpeg" @change="previewFile = $event.target.files[0]" />
             </div>
           </div>
           <p v-if="uploadError" class="error-text">{{ uploadError }}</p>
-          <button type="submit" :disabled="uploading">{{ uploading ? 'Uploading…' : 'Upload' }}</button>
+          <button type="submit" :disabled="uploading">{{ uploading ? 'Envoi…' : 'Envoyer' }}</button>
         </form>
       </div>
 
       <div class="card">
-        <h2>History</h2>
-        <div v-if="!history.length" class="muted">No history yet.</div>
+        <h2>Historique</h2>
+        <div v-if="!history.length" class="muted">Aucun historique pour l'instant.</div>
         <table v-else>
           <thead>
-            <tr><th>When</th><th>Who</th><th>Step</th><th>Status</th></tr>
+            <tr><th>Quand</th><th>Qui</th><th>Étape</th><th>Statut</th></tr>
           </thead>
           <tbody>
             <tr v-for="h in history" :key="h.id">
               <td>{{ formatDate(h.changed_at) }}</td>
               <td>{{ h.changed_by }}</td>
               <td>{{ h.old_step || '—' }} → {{ h.new_step || '—' }}</td>
-              <td>{{ h.old_status || '—' }} → {{ h.new_status || '—' }}</td>
+              <td>{{ statusLabel(h.old_status) }} → {{ statusLabel(h.new_status) }}</td>
             </tr>
           </tbody>
         </table>

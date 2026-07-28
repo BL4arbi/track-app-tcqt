@@ -16,19 +16,19 @@ function isAllowedDomain(email) {
 router.post('/signup', async (req, res) => {
   const { full_name, company_email, password } = req.body || {};
   if (!full_name || !company_email || !password) {
-    return res.status(400).json({ error: 'full_name, company_email and password are required' });
+    return res.status(400).json({ error: "Le nom complet, l'email et le mot de passe sont obligatoires" });
   }
   if (password.length < 8) {
-    return res.status(400).json({ error: 'Password must be at least 8 characters' });
+    return res.status(400).json({ error: "Le mot de passe doit contenir au moins 8 caractères" });
   }
   const email = String(company_email).toLowerCase().trim();
   if (!isAllowedDomain(email)) {
-    return res.status(400).json({ error: `Signup is restricted to @${process.env.ALLOWED_EMAIL_DOMAIN} addresses` });
+    return res.status(400).json({ error: `L'inscription est réservée aux adresses @${process.env.ALLOWED_EMAIL_DOMAIN}` });
   }
 
   const existing = await pool.query('SELECT id FROM users WHERE company_email = $1', [email]);
   if (existing.rows.length) {
-    return res.status(409).json({ error: 'An account with that email already exists' });
+    return res.status(409).json({ error: "Un compte existe déjà avec cet email" });
   }
 
   const password_hash = await bcrypt.hash(password, 10);
@@ -48,36 +48,36 @@ router.post('/signup', async (req, res) => {
   const { subject, html } = verificationEmail(token);
   await sendMail({ to: user.company_email, subject, html });
 
-  res.status(201).json({ message: 'Account created. Check your email to verify your account.', user });
+  res.status(201).json({ message: "Compte créé. Vérifiez votre email pour activer votre compte.", user });
 });
 
 router.get('/verify-email', async (req, res) => {
   const { token } = req.query;
-  if (!token) return res.status(400).json({ error: 'Missing token' });
+  if (!token) return res.status(400).json({ error: "Jeton manquant" });
   try {
     const payload = verifyToken(token);
     if (payload.purpose !== 'verify_email') throw new Error('wrong purpose');
     await pool.query('UPDATE users SET email_verified = TRUE WHERE id = $1', [payload.sub]);
-    res.json({ message: 'Email verified. You can now log in.' });
+    res.json({ message: "Email vérifié. Vous pouvez maintenant vous connecter." });
   } catch {
-    res.status(400).json({ error: 'Invalid or expired verification link' });
+    res.status(400).json({ error: "Lien de vérification invalide ou expiré" });
   }
 });
 
 router.post('/login', async (req, res) => {
   const { company_email, password } = req.body || {};
   if (!company_email || !password) {
-    return res.status(400).json({ error: 'company_email and password are required' });
+    return res.status(400).json({ error: "L'email et le mot de passe sont obligatoires" });
   }
   const email = String(company_email).toLowerCase().trim();
   const { rows } = await pool.query('SELECT * FROM users WHERE company_email = $1', [email]);
   const user = rows[0];
   if (!user || !(await bcrypt.compare(password, user.password_hash))) {
-    return res.status(401).json({ error: 'Invalid email or password' });
+    return res.status(401).json({ error: "Email ou mot de passe incorrect" });
   }
-  if (!user.active) return res.status(403).json({ error: 'Account is deactivated' });
+  if (!user.active) return res.status(403).json({ error: "Ce compte est désactivé" });
   if (!user.email_verified) {
-    return res.status(403).json({ error: 'Please verify your email before logging in' });
+    return res.status(403).json({ error: "Veuillez vérifier votre email avant de vous connecter" });
   }
 
   const token = signSessionToken(user);
@@ -102,21 +102,21 @@ router.post('/forgot-password', async (req, res) => {
     const { subject, html } = resetPasswordEmail(token);
     await sendMail({ to: email, subject, html });
   }
-  res.json({ message: 'If that email has an account, a reset link has been sent.' });
+  res.json({ message: "Si cet email correspond à un compte, un lien de réinitialisation a été envoyé." });
 });
 
 router.post('/reset-password', async (req, res) => {
   const { token, new_password } = req.body || {};
-  if (!token || !new_password) return res.status(400).json({ error: 'token and new_password are required' });
-  if (new_password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
+  if (!token || !new_password) return res.status(400).json({ error: "Le jeton et le nouveau mot de passe sont obligatoires" });
+  if (new_password.length < 8) return res.status(400).json({ error: "Le mot de passe doit contenir au moins 8 caractères" });
   try {
     const payload = verifyToken(token);
     if (payload.purpose !== 'reset_password') throw new Error('wrong purpose');
     const password_hash = await bcrypt.hash(new_password, 10);
     await pool.query('UPDATE users SET password_hash = $1 WHERE id = $2', [password_hash, payload.sub]);
-    res.json({ message: 'Password updated. You can now log in.' });
+    res.json({ message: "Mot de passe mis à jour. Vous pouvez maintenant vous connecter." });
   } catch {
-    res.status(400).json({ error: 'Invalid or expired reset link' });
+    res.status(400).json({ error: "Lien de réinitialisation invalide ou expiré" });
   }
 });
 

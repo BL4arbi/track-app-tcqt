@@ -18,13 +18,14 @@ function logout() {
     <header v-if="isAuthenticated" class="topbar">
       <div class="topbar-brand">SolidWorks Tracker</div>
       <nav class="topbar-nav">
-        <RouterLink to="/">Dashboard</RouterLink>
-        <RouterLink to="/my-tasks">My Tasks</RouterLink>
+        <RouterLink to="/">Tableau de bord</RouterLink>
+        <RouterLink to="/my-tasks">Mes tâches</RouterLink>
+        <RouterLink to="/calendar">Calendrier</RouterLink>
         <RouterLink v-if="auth.isManager" to="/admin">Admin</RouterLink>
       </nav>
       <div class="topbar-user">
         <span>{{ auth.user?.full_name }}</span>
-        <button class="link-button" @click="logout">Log out</button>
+        <button class="link-button" @click="logout">Déconnexion</button>
       </div>
     </header>
     <main class="page">

@@ -12,7 +12,7 @@ router.get('/', async (_req, res) => {
 
 router.post('/', async (req, res) => {
   const { name, notes } = req.body || {};
-  if (!name) return res.status(400).json({ error: 'name is required' });
+  if (!name) return res.status(400).json({ error: "Le nom est obligatoire" });
   const { rows } = await pool.query(
     'INSERT INTO clients (name, notes) VALUES ($1, $2) RETURNING id, name, notes',
     [name, notes || null]

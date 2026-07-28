@@ -29,15 +29,15 @@ onMounted(load);
 <template>
   <div>
     <select v-if="!addingNew" :value="modelValue" @change="emit('update:modelValue', Number($event.target.value))">
-      <option value="" disabled selected>Select a client…</option>
+      <option value="" disabled selected>Sélectionner un client…</option>
       <option v-for="c in clients" :key="c.id" :value="c.id">{{ c.name }}</option>
     </select>
-    <button v-if="!addingNew" type="button" class="link-button" style="margin-left:8px" @click="addingNew = true">+ new client</button>
+    <button v-if="!addingNew" type="button" class="link-button" style="margin-left:8px" @click="addingNew = true">+ nouveau client</button>
 
     <div v-else style="display:flex; gap:8px; align-items:center">
-      <input v-model="newName" placeholder="New client name" />
-      <button type="button" @click="addClient">Add</button>
-      <button type="button" class="secondary" @click="addingNew = false">Cancel</button>
+      <input v-model="newName" placeholder="Nom du nouveau client" />
+      <button type="button" @click="addClient">Ajouter</button>
+      <button type="button" class="secondary" @click="addingNew = false">Annuler</button>
     </div>
   </div>
 </template>

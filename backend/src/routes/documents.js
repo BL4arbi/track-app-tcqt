@@ -26,10 +26,10 @@ const storage = multer.diskStorage({
 function fileFilter(_req, file, cb) {
   const ext = path.extname(file.originalname).toLowerCase();
   if (file.fieldname === 'file' && !NATIVE_EXTENSIONS.has(ext)) {
-    return cb(new Error(`Unsupported native file type: ${ext}`));
+    return cb(new Error(`Type de fichier natif non supporté : ${ext}`));
   }
   if (file.fieldname === 'previewImage' && !IMAGE_EXTENSIONS.has(ext)) {
-    return cb(new Error(`Preview image must be png/jpg, got: ${ext}`));
+    return cb(new Error(`L'aperçu doit être un png/jpg, reçu : ${ext}`));
   }
   cb(null, true);
 }
@@ -48,11 +48,11 @@ router.post(
   upload.fields([{ name: 'file', maxCount: 1 }, { name: 'previewImage', maxCount: 1 }]),
   async (req, res) => {
     const { rows: taskRows } = await pool.query('SELECT id FROM tasks WHERE id = $1', [req.params.id]);
-    if (!taskRows[0]) return res.status(404).json({ error: 'Task not found' });
+    if (!taskRows[0]) return res.status(404).json({ error: "Tâche introuvable" });
 
     const nativeFile = req.files?.file?.[0];
     const previewImage = req.files?.previewImage?.[0];
-    if (!nativeFile) return res.status(400).json({ error: 'file is required' });
+    if (!nativeFile) return res.status(400).json({ error: "Le fichier est obligatoire" });
 
     const toRelative = (f) => path.relative(UPLOAD_DIR, f.path).split(path.sep).join('/');
 
@@ -75,7 +75,7 @@ router.post(
 router.get('/documents/:id/download', async (req, res) => {
   const { rows } = await pool.query('SELECT * FROM documents WHERE id = $1', [req.params.id]);
   const doc = rows[0];
-  if (!doc) return res.status(404).json({ error: 'Document not found' });
+  if (!doc) return res.status(404).json({ error: "Document introuvable" });
   res.download(path.resolve(UPLOAD_DIR, doc.storage_path), doc.original_filename);
 });
 

@@ -19,15 +19,15 @@ async function submit() {
 
 <template>
   <div class="auth-page">
-    <h1>Forgot password</h1>
+    <h1>Mot de passe oublié</h1>
     <form v-if="!message" @submit.prevent="submit">
       <div class="field">
-        <label for="email">Company email</label>
+        <label for="email">Email professionnel</label>
         <input id="email" v-model="company_email" type="email" required />
       </div>
-      <button type="submit" :disabled="loading" style="width:100%">{{ loading ? 'Sending…' : 'Send reset link' }}</button>
+      <button type="submit" :disabled="loading" style="width:100%">{{ loading ? 'Envoi…' : 'Envoyer le lien de réinitialisation' }}</button>
     </form>
     <p v-else class="success-text">{{ message }}</p>
-    <p class="muted" style="margin-top:16px"><RouterLink to="/login">Back to log in</RouterLink></p>
+    <p class="muted" style="margin-top:16px"><RouterLink to="/login">Retour à la connexion</RouterLink></p>
   </div>
 </template>
