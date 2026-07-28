@@ -1,7 +1,7 @@
 {
   "name": "solidworks-tracker",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "description": "Internal SolidWorks team task tracker (desktop client)",
   "author": "BL4arbi",
@@ -32,15 +32,25 @@
   "build": {
     "appId": "com.tacquet.trackapp",
     "productName": "SolidWorks Team Tracker",
+    "icon": "asset/icon.ico",
     "files": [
       "dist/**/*",
-      "electron/**/*"
+      "electron/**/*",
+      "asset/**/*"
     ],
     "directories": {
       "output": "release"
     },
     "win": {
-      "target": "nsis"
+      "target": "nsis",
+      "icon": "asset/icon.ico"
+    },
+    "nsis": {
+      "installerIcon": "asset/icon.ico",
+      "uninstallerIcon": "asset/icon.ico",
+      "installerHeader": "asset/installer-header.bmp",
+      "installerSidebar": "asset/installer-sidebar.bmp",
+      "uninstallerSidebar": "asset/installer-sidebar.bmp"
     },
     "publish": [
       {
