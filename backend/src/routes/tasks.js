@@ -10,7 +10,10 @@ const TASK_SELECT = `
   SELECT t.id, t.title, t.current_step, t.next_step, t.due_date, t.status,
          t.created_at, t.updated_at,
          t.client_id, c.name AS client_name,
-         t.assigned_user_id, u.full_name AS assigned_user_name
+         t.assigned_user_id, u.full_name AS assigned_user_name,
+         (SELECT d.preview_image_path FROM documents d
+          WHERE d.task_id = t.id AND d.preview_image_path IS NOT NULL
+          ORDER BY d.uploaded_at DESC LIMIT 1) AS preview_image_path
   FROM tasks t
   JOIN clients c ON c.id = t.client_id
   JOIN users u ON u.id = t.assigned_user_id

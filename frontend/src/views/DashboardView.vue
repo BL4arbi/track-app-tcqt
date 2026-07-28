@@ -18,6 +18,10 @@ function formatDueDate(dateKey) {
   const [y, m, d] = dateKey.split('-');
   return `${d}/${m}/${y}`;
 }
+function previewUrl(t) {
+  if (!t.preview_image_path) return null;
+  return `${api.defaults.baseURL}/uploads/${t.preview_image_path}`;
+}
 
 async function load() {
   loading.value = true;
@@ -53,6 +57,7 @@ onMounted(load);
     <table v-else>
       <thead>
         <tr>
+          <th>Aperçu</th>
           <th>Qui</th>
           <th>Client</th>
           <th>Tâche</th>
@@ -64,6 +69,12 @@ onMounted(load);
       </thead>
       <tbody>
         <tr v-for="t in tasks" :key="t.id">
+          <td>
+            <RouterLink :to="`/tasks/${t.id}`">
+              <img v-if="previewUrl(t)" :src="previewUrl(t)" class="preview-thumb-sm" :alt="t.title" />
+              <span v-else class="preview-thumb-sm preview-thumb-sm--empty"></span>
+            </RouterLink>
+          </td>
           <td>
             <span class="user-chip">
               <span class="user-avatar" :style="{ background: userColors.get(t.assigned_user_id) }">{{ initials(t.assigned_user_name) }}</span>
