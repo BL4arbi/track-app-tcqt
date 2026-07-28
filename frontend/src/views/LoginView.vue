@@ -8,8 +8,9 @@ const auth = useAuthStore();
 const router = useRouter();
 const route = useRoute();
 
-const company_email = ref('');
+const company_email = ref(localStorage.getItem('rememberedEmail') || '');
 const password = ref('');
+const rememberMe = ref(true);
 const error = ref('');
 const loading = ref(false);
 
@@ -18,7 +19,12 @@ async function submit() {
   loading.value = true;
   try {
     const { data } = await api.post('/api/auth/login', { company_email: company_email.value, password: password.value });
-    auth.setSession(data.token, data.user);
+    auth.setSession(data.token, data.user, rememberMe.value);
+    if (rememberMe.value) {
+      localStorage.setItem('rememberedEmail', company_email.value);
+    } else {
+      localStorage.removeItem('rememberedEmail');
+    }
     router.push(route.query.redirect || { name: 'dashboard' });
   } catch (e) {
     error.value = e.response?.data?.error || 'Échec de la connexion';
@@ -40,6 +46,10 @@ async function submit() {
         <label for="password">Mot de passe</label>
         <input id="password" v-model="password" type="password" required autocomplete="current-password" />
       </div>
+      <label style="display:flex; align-items:center; gap:6px; font-weight:normal; margin-bottom:14px">
+        <input v-model="rememberMe" type="checkbox" />
+        Se souvenir de moi
+      </label>
       <p v-if="error" class="error-text">{{ error }}</p>
       <button type="submit" :disabled="loading" style="width:100%">{{ loading ? 'Connexion…' : 'Se connecter' }}</button>
     </form>
