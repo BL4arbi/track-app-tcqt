@@ -1,0 +1,147 @@
+:root {
+  --text: #3d3a45;
+  --text-h: #08060d;
+  --bg: #fff;
+  --bg-subtle: #f7f7f9;
+  --border: #e2e1e6;
+  --accent: #6c3bff;
+  --accent-bg: rgba(108, 59, 255, 0.08);
+  --danger: #c0362c;
+  --success: #1a7f4b;
+  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
+
+  font: 15px/1.5 var(--sans);
+  color-scheme: light dark;
+  color: var(--text);
+  background: var(--bg);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --text: #c9c8cf;
+    --text-h: #f3f4f6;
+    --bg: #16171d;
+    --bg-subtle: #1d1e26;
+    --border: #2e303a;
+    --accent: #a48bff;
+    --accent-bg: rgba(164, 139, 255, 0.15);
+  }
+}
+
+* { box-sizing: border-box; }
+
+body { margin: 0; }
+
+h1, h2, h3 { color: var(--text-h); font-weight: 600; margin: 0 0 12px; }
+h1 { font-size: 22px; }
+h2 { font-size: 17px; }
+
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+.app-shell { min-height: 100vh; display: flex; flex-direction: column; }
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 12px 24px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-subtle);
+}
+.topbar-brand { font-weight: 700; color: var(--text-h); }
+.topbar-nav { display: flex; gap: 16px; flex: 1; }
+.topbar-nav a { color: var(--text); }
+.topbar-nav a.router-link-exact-active { color: var(--accent); font-weight: 600; }
+.topbar-user { display: flex; align-items: center; gap: 12px; font-size: 14px; }
+
+.page { flex: 1; padding: 24px; max-width: 1100px; width: 100%; margin: 0 auto; }
+
+.auth-page {
+  max-width: 380px;
+  margin: 10vh auto;
+  padding: 32px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 14px; }
+.field label { font-size: 13px; font-weight: 600; color: var(--text-h); }
+
+input, select, textarea {
+  font: inherit;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text-h);
+}
+input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+
+button {
+  font: inherit;
+  cursor: pointer;
+  padding: 8px 14px;
+  border-radius: 6px;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+button:hover { opacity: 0.9; }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+button.secondary { background: transparent; color: var(--accent); }
+
+.link-button {
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-weight: 400;
+  padding: 0;
+}
+.link-button:hover { text-decoration: underline; }
+
+.card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 20px;
+  margin-bottom: 20px;
+  background: var(--bg);
+}
+
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+th { color: var(--text-h); font-weight: 600; background: var(--bg-subtle); }
+tr:hover td { background: var(--bg-subtle); }
+
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.badge.active { background: var(--accent-bg); color: var(--accent); }
+.badge.paused { background: rgba(200, 150, 0, 0.15); color: #a67c00; }
+.badge.done { background: rgba(26, 127, 75, 0.15); color: var(--success); }
+
+.error-text { color: var(--danger); font-size: 13px; margin: 8px 0; }
+.success-text { color: var(--success); font-size: 13px; margin: 8px 0; }
+.muted { color: var(--text); opacity: 0.7; font-size: 13px; }
+
+.form-row { display: flex; gap: 12px; }
+.form-row .field { flex: 1; }
+
+.toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+
+.preview-thumb {
+  width: 96px;
+  height: 96px;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg-subtle);
+}
+
+.doc-row { display: flex; gap: 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--border); }
+.doc-row:last-child { border-bottom: none; }
