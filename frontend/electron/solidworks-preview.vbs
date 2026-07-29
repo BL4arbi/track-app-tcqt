@@ -14,10 +14,17 @@
 ' configurable overloads consistently threw "Type incompatible" here
 ' regardless of argument typing; the plain legacy forms worked immediately.
 '
-' Never calls ExitApp or touches Visible: CreateObject attaches to the
-' user's already-running SolidWorks session if they have one open, and
-' forcing either would risk closing or hiding their real unsaved work.
-' Only the specific document opened here gets closed.
+' Closes the SolidWorks instance at the end ONLY if this script is the one
+' that started it (checked via WMI before CreateObject). If the user
+' already had SolidWorks open, we attach to that session and leave it
+' running untouched — never risking their real unsaved work. But an
+' instance we spawned ourselves gets closed every time, because leaving it
+' running headless was confirmed to be the actual root cause of repeated
+' "crashes with zero error output": a leftover automation-only SLDWORKS.exe
+' left running overnight degraded into a broken COM state (GetDocuments
+' failing with "Object required" while simple property reads still
+' worked), and every subsequent preview attempt kept re-attaching to that
+' same broken zombie instead of a fresh one.
 '
 ' Large assemblies have been observed to fail with NO stderr output at
 ' all — which "On Error Resume Next" should never allow, since every
@@ -32,6 +39,8 @@
 On Error Resume Next
 
 Set fso = CreateObject("Scripting.FileSystemObject")
+Set sw = Nothing
+startedByUs = False
 
 Sub LogStep(path, msg)
   On Error Resume Next
@@ -39,6 +48,23 @@ Sub LogStep(path, msg)
   Set f = fso.OpenTextFile(path, 8, True) ' 8 = ForAppending, create if missing
   f.WriteLine Now & "  " & msg
   f.Close
+End Sub
+
+' Closes the SolidWorks instance we started (if any), then quits.
+Sub Finish(code)
+  If startedByUs And Not (sw Is Nothing) Then
+    On Error Resume Next
+    LogStep logPath, "Fermeture de l'instance SolidWorks demarree par ce script..."
+    sw.ExitApp()
+    LogStep logPath, "SolidWorks ferme."
+  End If
+  WScript.Quit code
+End Sub
+
+Sub Fail(msg, logMsg)
+  WScript.StdErr.WriteLine msg
+  LogStep logPath, "ECHEC : " & logMsg
+  Finish 1
 End Sub
 
 If WScript.Arguments.Count < 2 Then
@@ -68,9 +94,7 @@ Select Case ext
   Case ".slddrw"
     docType = 3
   Case Else
-    WScript.StdErr.WriteLine "Type de fichier non pris en charge : " & ext
-    LogStep logPath, "ECHEC : type de fichier non pris en charge : " & ext
-    WScript.Quit 1
+    Fail "Type de fichier non pris en charge : " & ext, "type de fichier non pris en charge : " & ext
 End Select
 
 LogStep logPath, "Type detecte : " & ext & " (docType=" & docType & ")"
@@ -78,20 +102,26 @@ LogStep logPath, "Type detecte : " & ext & " (docType=" & docType & ")"
 ' STL is a 3D solid format — meaningless for a 2D drawing (.slddrw).
 canExportStl = (docType = 1 Or docType = 2)
 
+' Was SolidWorks already running before we touch it? If not, we started
+' it, and we're responsible for closing it when we're done.
+runningBefore = 0
+Set wmi = GetObject("winmgmts:")
+Set existingProcs = wmi.ExecQuery("Select * from Win32_Process Where Name='SLDWORKS.EXE'")
+If Err.Number = 0 Then runningBefore = existingProcs.Count
+Err.Clear
+startedByUs = (runningBefore = 0)
+LogStep logPath, "Instances SLDWORKS.EXE deja actives avant demarrage : " & runningBefore & " (startedByUs=" & startedByUs & ")"
+
 Set sw = CreateObject("SldWorks.Application")
 If Err.Number <> 0 Then
-  WScript.StdErr.WriteLine "Impossible de demarrer SolidWorks : " & Err.Description
-  LogStep logPath, "ECHEC CreateObject SldWorks.Application : " & Err.Description
-  WScript.Quit 1
+  Fail "Impossible de demarrer SolidWorks : " & Err.Description, "CreateObject SldWorks.Application : " & Err.Description
 End If
 LogStep logPath, "SolidWorks attache."
 
 LogStep logPath, "Ouverture du fichier..."
 Set model = sw.OpenDoc(filePath, docType)
 If Err.Number <> 0 Or model Is Nothing Then
-  WScript.StdErr.WriteLine "Impossible d'ouvrir le fichier : " & Err.Description
-  LogStep logPath, "ECHEC OpenDoc : " & Err.Description & " (model Is Nothing: " & (model Is Nothing) & ")"
-  WScript.Quit 1
+  Fail "Impossible d'ouvrir le fichier : " & Err.Description, "OpenDoc : " & Err.Description & " (model Is Nothing: " & (model Is Nothing) & ")"
 End If
 LogStep logPath, "Fichier ouvert."
 
@@ -101,10 +131,10 @@ LogStep logPath, "Zoom to fit effectue."
 LogStep logPath, "Export PNG vers " & outputPngPath & "..."
 ok = model.SaveAs(outputPngPath)
 If Err.Number <> 0 Or Not ok Then
-  WScript.StdErr.WriteLine "Echec de l'export de l'apercu : " & Err.Description
-  LogStep logPath, "ECHEC export PNG : " & Err.Description
+  Dim errDesc
+  errDesc = Err.Description
   sw.CloseDoc(model.GetTitle())
-  WScript.Quit 1
+  Fail "Echec de l'export de l'apercu : " & errDesc, "export PNG : " & errDesc
 End If
 LogStep logPath, "PNG exporte."
 
@@ -125,3 +155,4 @@ sw.CloseDoc(model.GetTitle())
 LogStep logPath, "Document ferme. Termine avec succes."
 
 WScript.Echo "OK"
+Finish 0
