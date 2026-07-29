@@ -1,7 +1,7 @@
 import { app, BrowserWindow, Menu, dialog, ipcMain } from 'electron';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { appendFileSync } from 'node:fs';
+import { appendFileSync, readFileSync, writeFileSync, existsSync, unlinkSync } from 'node:fs';
 import electronUpdater from 'electron-updater';
 const { autoUpdater } = electronUpdater;
 
@@ -11,6 +11,41 @@ const isDev = !app.isPackaged;
 ipcMain.handle('generate-sw-preview', async (_event, nativeFilePath) => {
   const { generateSolidWorksPreview } = await import('./solidworksPreview.js');
   return generateSolidWorksPreview(nativeFilePath);
+});
+
+// "Remember me" session persistence via the main process's own filesystem
+// access, not browser localStorage — localStorage under a packaged app's
+// file:// origin is not reliably persistent across restarts/updates in all
+// Chromium configurations, which is what "have to log in every time" was.
+// This writes a plain JSON file in userData, same reliable mechanism as
+// the update log.
+const sessionFilePath = path.join(app.getPath('userData'), 'session.json');
+
+ipcMain.handle('get-session', () => {
+  try {
+    if (existsSync(sessionFilePath)) {
+      return JSON.parse(readFileSync(sessionFilePath, 'utf8'));
+    }
+  } catch {
+    // corrupt/unreadable file — treat as no session
+  }
+  return null;
+});
+
+ipcMain.handle('set-session', (_event, data) => {
+  try {
+    writeFileSync(sessionFilePath, JSON.stringify(data));
+  } catch {
+    // best-effort — worst case the user has to log in again
+  }
+});
+
+ipcMain.handle('clear-session', () => {
+  try {
+    if (existsSync(sessionFilePath)) unlinkSync(sessionFilePath);
+  } catch {
+    // best-effort
+  }
 });
 
 function createWindow() {

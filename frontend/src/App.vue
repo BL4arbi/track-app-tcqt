@@ -7,8 +7,8 @@ const auth = useAuthStore();
 const router = useRouter();
 const isAuthenticated = computed(() => auth.isAuthenticated);
 
-function logout() {
-  auth.logout();
+async function logout() {
+  await auth.logout();
   router.push({ name: 'login' });
 }
 </script>
@@ -16,7 +16,10 @@ function logout() {
 <template>
   <div class="app-shell">
     <header v-if="isAuthenticated" class="topbar">
-      <div class="topbar-brand">SolidWorks Tracker</div>
+      <div class="topbar-brand">
+        <img src="/logo.png" alt="Tacquet Industries" />
+        SolidWorks Tracker
+      </div>
       <nav class="topbar-nav">
         <RouterLink to="/">Tableau de bord</RouterLink>
         <RouterLink to="/my-tasks">Mes tâches</RouterLink>

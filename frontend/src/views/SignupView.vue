@@ -30,6 +30,7 @@ async function submit() {
 
 <template>
   <div class="auth-page">
+    <div class="auth-logo"><img src="/logo.png" alt="Tacquet Industries" /></div>
     <h1>Créer un compte</h1>
     <form v-if="!message" @submit.prevent="submit">
       <div class="field">

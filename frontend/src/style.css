@@ -4,11 +4,17 @@
   --bg: #fff;
   --bg-subtle: #f7f7f9;
   --border: #e2e1e6;
-  --accent: #6c3bff;
-  --accent-bg: rgba(108, 59, 255, 0.08);
+  --accent: #c8102e;
+  --accent-bg: rgba(200, 16, 46, 0.08);
   --danger: #c0362c;
   --success: #1a7f4b;
   --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
+
+  /* Tacquet Industries brand: black + red, fixed regardless of light/dark
+     theme (the topbar is brand chrome, not content). */
+  --topbar-bg: #0b0b0d;
+  --topbar-text: #fff;
+  --topbar-text-muted: #b8b7bb;
 
   font: 15px/1.5 var(--sans);
   color-scheme: light dark;
@@ -23,8 +29,8 @@
     --bg: #16171d;
     --bg-subtle: #1d1e26;
     --border: #2e303a;
-    --accent: #a48bff;
-    --accent-bg: rgba(164, 139, 255, 0.15);
+    --accent: #e6435c;
+    --accent-bg: rgba(230, 67, 92, 0.15);
   }
 }
 
@@ -47,13 +53,16 @@ a:hover { text-decoration: underline; }
   gap: 24px;
   padding: 12px 24px;
   border-bottom: 3px solid var(--accent);
-  background: var(--bg-subtle);
+  background: var(--topbar-bg);
 }
-.topbar-brand { font-weight: 700; color: var(--text-h); }
+.topbar-brand { display: flex; align-items: center; gap: 8px; font-weight: 700; color: var(--topbar-text); }
+.topbar-brand img { height: 28px; width: auto; display: block; }
 .topbar-nav { display: flex; gap: 16px; flex: 1; }
-.topbar-nav a { color: var(--text); padding-bottom: 2px; border-bottom: 2px solid transparent; }
-.topbar-nav a.router-link-exact-active { color: var(--accent); font-weight: 600; border-bottom-color: var(--accent); }
-.topbar-user { display: flex; align-items: center; gap: 12px; font-size: 14px; }
+.topbar-nav a { color: var(--topbar-text-muted); padding-bottom: 2px; border-bottom: 2px solid transparent; }
+.topbar-nav a.router-link-exact-active { color: var(--topbar-text); font-weight: 600; border-bottom-color: var(--accent); }
+.topbar-user { display: flex; align-items: center; gap: 12px; font-size: 14px; color: var(--topbar-text); }
+.topbar-user .link-button { color: var(--topbar-text-muted); }
+.topbar-user .link-button:hover { color: var(--topbar-text); }
 
 .page { flex: 1; padding: 24px; max-width: 1100px; width: 100%; margin: 0 auto; }
 
@@ -63,6 +72,19 @@ a:hover { text-decoration: underline; }
   padding: 32px;
   border: 1px solid var(--border);
   border-radius: 8px;
+}
+
+.auth-logo {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 20px;
+}
+.auth-logo img {
+  height: 72px;
+  width: 72px;
+  border-radius: 12px;
+  background: var(--topbar-bg);
+  padding: 8px;
 }
 
 .field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 14px; }

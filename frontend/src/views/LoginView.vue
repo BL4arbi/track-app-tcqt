@@ -19,7 +19,7 @@ async function submit() {
   loading.value = true;
   try {
     const { data } = await api.post('/api/auth/login', { company_email: company_email.value, password: password.value });
-    auth.setSession(data.token, data.user, rememberMe.value);
+    await auth.setSession(data.token, data.user, rememberMe.value);
     if (rememberMe.value) {
       localStorage.setItem('rememberedEmail', company_email.value);
     } else {
@@ -36,6 +36,7 @@ async function submit() {
 
 <template>
   <div class="auth-page">
+    <div class="auth-logo"><img src="/logo.png" alt="Tacquet Industries" /></div>
     <h1>Connexion</h1>
     <form @submit.prevent="submit">
       <div class="field">

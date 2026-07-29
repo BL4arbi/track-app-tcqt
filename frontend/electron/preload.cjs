@@ -6,4 +6,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // documented replacement for resolving a picked <input type="file"> to
   // its real filesystem path, and must be called from the renderer side.
   getPathForFile: (file) => webUtils.getPathForFile(file),
+  getSession: () => ipcRenderer.invoke('get-session'),
+  setSession: (data) => ipcRenderer.invoke('set-session', data),
+  clearSession: () => ipcRenderer.invoke('clear-session'),
 });
