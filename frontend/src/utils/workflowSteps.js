@@ -1,12 +1,11 @@
 // Fixed chronology for on-site machining jobs — replaces free-text
 // current_step/next_step with a real, ordered pipeline.
 export const WORKFLOW_STEPS = [
-  'Dessin',
-  'Implémentation',
-  'Commande des pièces',
-  'Avant départ chantier',
-  'Réalisation chantier',
-  'Chantier terminé',
+  'Conception / Implémentation',
+  'Achat matière',
+  'Commande reçu',
+  'Préparation chantier',
+  'Départ chantier',
 ];
 
 export function nextWorkflowStep(current) {

@@ -12,14 +12,16 @@ router.use(requireAuth);
 const UPLOAD_DIR = process.env.UPLOAD_DIR || './uploads';
 
 const TASK_SELECT = `
-  SELECT t.id, t.title, t.current_step, t.next_step, t.due_date, t.status,
+  SELECT t.id, t.title, t.current_step, t.next_step, t.due_date, t.final_date, t.status,
          t.created_at, t.updated_at,
          t.client_id, c.name AS client_name,
          t.assigned_user_id, u.full_name AS assigned_user_name,
+         t.parent_task_id, parent.title AS parent_title,
          latest_doc.preview_image_path, latest_doc.model_path
   FROM tasks t
   JOIN clients c ON c.id = t.client_id
   JOIN users u ON u.id = t.assigned_user_id
+  LEFT JOIN tasks parent ON parent.id = t.parent_task_id
   LEFT JOIN LATERAL (
     SELECT d.preview_image_path, d.model_path
     FROM documents d
@@ -48,7 +50,7 @@ router.get('/mine', async (req, res) => {
 // Team calendar: every task with an expected date, any status.
 router.get('/calendar', async (_req, res) => {
   const { rows } = await pool.query(
-    `${TASK_SELECT} WHERE t.due_date IS NOT NULL ORDER BY t.due_date`
+    `${TASK_SELECT} WHERE t.due_date IS NOT NULL OR t.final_date IS NOT NULL ORDER BY COALESCE(t.due_date, t.final_date)`
   );
   res.json({ tasks: rows });
 });
@@ -58,7 +60,7 @@ router.get('/:id', async (req, res) => {
   const task = rows[0];
   if (!task) return res.status(404).json({ error: "Tâche introuvable" });
 
-  const [{ rows: history }, { rows: documents }] = await Promise.all([
+  const [{ rows: history }, { rows: documents }, { rows: subtasks }] = await Promise.all([
     pool.query(
       `SELECT h.id, h.old_step, h.new_step, h.old_status, h.new_status, h.changed_at,
               u.full_name AS changed_by
@@ -73,13 +75,17 @@ router.get('/:id', async (req, res) => {
        WHERE d.task_id = $1 ORDER BY d.uploaded_at DESC`,
       [task.id]
     ),
+    pool.query(
+      `SELECT id, title, status FROM tasks WHERE parent_task_id = $1 ORDER BY created_at`,
+      [task.id]
+    ),
   ]);
 
-  res.json({ task, history, documents });
+  res.json({ task, history, documents, subtasks });
 });
 
 router.post('/', async (req, res) => {
-  const { client_id, title, current_step, next_step, due_date, assigned_user_id } = req.body || {};
+  const { client_id, title, current_step, next_step, due_date, final_date, parent_task_id, assigned_user_id } = req.body || {};
   if (!client_id || !title) {
     return res.status(400).json({ error: "Le client et le titre sont obligatoires" });
   }
@@ -95,9 +101,9 @@ router.post('/', async (req, res) => {
     : (next_step || null);
 
   const { rows } = await pool.query(
-    `INSERT INTO tasks (client_id, assigned_user_id, title, current_step, next_step, due_date)
-     VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-    [client_id, ownerId, title, current_step || null, derivedNextStep, due_date || null]
+    `INSERT INTO tasks (client_id, assigned_user_id, title, current_step, next_step, due_date, final_date, parent_task_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+    [client_id, ownerId, title, current_step || null, derivedNextStep, due_date || null, final_date || null, parent_task_id || null]
   );
   const taskId = rows[0].id;
 
@@ -119,7 +125,12 @@ router.patch('/:id', async (req, res) => {
   const canEdit = req.user.role === 'manager' || existing.assigned_user_id === req.user.id;
   if (!canEdit) return res.status(403).json({ error: "Vous ne pouvez modifier que vos propres tâches" });
 
-  const { title, current_step, next_step, due_date, status, client_id, assigned_user_id } = req.body || {};
+  const { title, current_step, next_step, due_date, final_date, parent_task_id, status, client_id, assigned_user_id } = req.body || {};
+
+  if (parent_task_id !== undefined && parent_task_id !== null && Number(parent_task_id) === existing.id) {
+    return res.status(400).json({ error: "Une tâche ne peut pas être sa propre tâche parente" });
+  }
+
   const resolvedCurrentStep = current_step ?? existing.current_step;
   const next = {
     title: title ?? existing.title,
@@ -128,16 +139,19 @@ router.patch('/:id', async (req, res) => {
       ? nextWorkflowStep(resolvedCurrentStep)
       : (next_step ?? existing.next_step),
     due_date: due_date !== undefined ? (due_date || null) : existing.due_date,
+    final_date: final_date !== undefined ? (final_date || null) : existing.final_date,
+    parent_task_id: parent_task_id !== undefined ? (parent_task_id || null) : existing.parent_task_id,
     status: status ?? existing.status,
     client_id: client_id ?? existing.client_id,
     assigned_user_id: req.user.role === 'manager' ? (assigned_user_id ?? existing.assigned_user_id) : existing.assigned_user_id,
   };
 
   await pool.query(
-    `UPDATE tasks SET title = $1, current_step = $2, next_step = $3, due_date = $4,
-                       status = $5, client_id = $6, assigned_user_id = $7
-     WHERE id = $8`,
-    [next.title, next.current_step, next.next_step, next.due_date, next.status, next.client_id, next.assigned_user_id, existing.id]
+    `UPDATE tasks SET title = $1, current_step = $2, next_step = $3, due_date = $4, final_date = $5,
+                       parent_task_id = $6, status = $7, client_id = $8, assigned_user_id = $9
+     WHERE id = $10`,
+    [next.title, next.current_step, next.next_step, next.due_date, next.final_date,
+     next.parent_task_id, next.status, next.client_id, next.assigned_user_id, existing.id]
   );
 
   const stepChanged = next.current_step !== existing.current_step;
@@ -169,8 +183,9 @@ router.delete('/:id', async (req, res) => {
     [existing.id]
   );
 
-  // task_history and documents rows cascade-delete via FK ON DELETE CASCADE
-  // — this only needs to clean up the actual files on disk.
+  // task_history and documents rows cascade-delete via FK ON DELETE CASCADE;
+  // sub-tasks (parent_task_id) get their parent link cleared (ON DELETE SET
+  // NULL), not deleted themselves. This only needs to clean up disk files.
   await pool.query('DELETE FROM tasks WHERE id = $1', [existing.id]);
 
   const filePaths = docs.flatMap((d) => [d.storage_path, d.preview_image_path, d.model_path]).filter(Boolean);

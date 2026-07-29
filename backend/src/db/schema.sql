@@ -21,16 +21,20 @@ CREATE TABLE IF NOT EXISTS tasks (
   id               SERIAL PRIMARY KEY,
   client_id        INTEGER NOT NULL REFERENCES clients(id),
   assigned_user_id INTEGER NOT NULL REFERENCES users(id),
+  parent_task_id   INTEGER REFERENCES tasks(id) ON DELETE SET NULL,
   title            TEXT NOT NULL,
   current_step     TEXT,
   next_step        TEXT,
-  due_date         DATE,
+  due_date         DATE,  -- "date exécution chantier"
+  final_date       DATE,  -- "date finale"
   status           TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'paused', 'done')),
   created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at       TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS due_date DATE;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS final_date DATE;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS parent_task_id INTEGER REFERENCES tasks(id) ON DELETE SET NULL;
 
 CREATE TABLE IF NOT EXISTS task_history (
   id          SERIAL PRIMARY KEY,
@@ -60,6 +64,8 @@ ALTER TABLE documents ADD COLUMN IF NOT EXISTS model_path TEXT;
 CREATE INDEX IF NOT EXISTS idx_tasks_assigned_user ON tasks(assigned_user_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
 CREATE INDEX IF NOT EXISTS idx_tasks_due_date ON tasks(due_date);
+CREATE INDEX IF NOT EXISTS idx_tasks_final_date ON tasks(final_date);
+CREATE INDEX IF NOT EXISTS idx_tasks_parent ON tasks(parent_task_id);
 CREATE INDEX IF NOT EXISTS idx_task_history_task ON task_history(task_id);
 CREATE INDEX IF NOT EXISTS idx_documents_task ON documents(task_id);
 

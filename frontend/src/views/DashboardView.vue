@@ -76,7 +76,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
 <template>
   <div>
     <div class="toolbar">
-      <h1>Tableau de bord — tâches actives</h1>
+      <h1>Tableau de bord — tâches en cours</h1>
       <button class="secondary" @click="load">Actualiser</button>
     </div>
 
@@ -90,7 +90,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
           <th>Aperçu</th>
           <th>Qui</th>
           <th>Client</th>
-          <th>Tâche</th>
+          <th>N° d'affaire</th>
           <th>Étape actuelle</th>
           <th>Étape suivante</th>
           <th>Date prévue</th>

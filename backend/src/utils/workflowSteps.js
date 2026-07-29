@@ -1,12 +1,11 @@
 // Fixed chronology for on-site machining jobs — mirrors
 // frontend/src/utils/workflowSteps.js. Keep both in sync.
 export const WORKFLOW_STEPS = [
-  'Dessin',
-  'Implémentation',
-  'Commande des pièces',
-  'Avant départ chantier',
-  'Réalisation chantier',
-  'Chantier terminé',
+  'Conception / Implémentation',
+  'Achat matière',
+  'Commande reçu',
+  'Préparation chantier',
+  'Départ chantier',
 ];
 
 export function nextWorkflowStep(current) {

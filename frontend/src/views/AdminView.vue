@@ -11,7 +11,7 @@ const loading = ref(true);
 const error = ref('');
 const savingId = ref(null);
 
-const STATUS_LABELS = { active: 'Actif', paused: 'En pause', done: 'Terminé' };
+const STATUS_LABELS = { active: 'En cours', paused: 'En pause', done: 'Terminé' };
 
 async function load() {
   loading.value = true;

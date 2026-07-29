@@ -12,7 +12,9 @@ const auth = useAuthStore();
 const task = ref(null);
 const history = ref([]);
 const documents = ref([]);
+const subtasks = ref([]);
 const teamMembers = ref([]);
+const parentOptions = ref([]);
 const loading = ref(true);
 const error = ref('');
 
@@ -44,7 +46,7 @@ const saveError = ref('');
 const deletingTask = ref(false);
 const deleteTaskError = ref('');
 
-const STATUS_LABELS = { active: 'Actif', paused: 'En pause', done: 'Terminé' };
+const STATUS_LABELS = { active: 'En cours', paused: 'En pause', done: 'Terminé' };
 
 function formatDate(iso) {
   return new Date(iso).toLocaleString('fr-FR');
@@ -79,12 +81,14 @@ async function load() {
   loading.value = true;
   error.value = '';
   try {
-    const requests = [api.get(`/api/tasks/${route.params.id}`)];
+    const requests = [api.get(`/api/tasks/${route.params.id}`), api.get('/api/tasks/mine')];
     if (auth.isManager) requests.push(api.get('/api/users/directory'));
-    const [taskRes, teamRes] = await Promise.all(requests);
+    const [taskRes, mineRes, teamRes] = await Promise.all(requests);
     task.value = taskRes.data.task;
     history.value = taskRes.data.history;
     documents.value = taskRes.data.documents;
+    subtasks.value = taskRes.data.subtasks;
+    parentOptions.value = mineRes.data.tasks.filter((t) => t.id !== task.value.id);
     if (teamRes) teamMembers.value = teamRes.data.users;
   } catch (e) {
     error.value = e.response?.data?.error || 'Échec du chargement de la tâche';
@@ -98,6 +102,8 @@ function startEdit() {
     title: task.value.title,
     current_step: task.value.current_step || '',
     due_date: task.value.due_date || '',
+    final_date: task.value.final_date || '',
+    parent_task_id: task.value.parent_task_id || '',
     status: task.value.status,
     assigned_user_id: task.value.assigned_user_id,
   });
@@ -109,7 +115,12 @@ async function saveEdit() {
   saving.value = true;
   saveError.value = '';
   try {
-    await api.patch(`/api/tasks/${route.params.id}`, { ...editDraft, due_date: editDraft.due_date || null });
+    await api.patch(`/api/tasks/${route.params.id}`, {
+      ...editDraft,
+      due_date: editDraft.due_date || null,
+      final_date: editDraft.final_date || null,
+      parent_task_id: editDraft.parent_task_id || null,
+    });
     editing.value = false;
     await load();
   } catch (e) {
@@ -291,20 +302,25 @@ onMounted(load);
           <p><strong>Assigné à :</strong> {{ task.assigned_user_name }}</p>
           <p><strong>Étape actuelle :</strong> {{ task.current_step || '—' }}</p>
           <p><strong>Étape suivante :</strong> {{ task.next_step || '—' }}</p>
-          <p><strong>Date prévue :</strong> {{ formatDueDate(task.due_date) }}</p>
+          <p><strong>Date exécution chantier :</strong> {{ formatDueDate(task.due_date) }}</p>
+          <p><strong>Date finale :</strong> {{ formatDueDate(task.final_date) }}</p>
+          <p v-if="task.parent_task_id">
+            <strong>Tâche parente :</strong>
+            <RouterLink :to="`/tasks/${task.parent_task_id}`">{{ task.parent_title }}</RouterLink>
+          </p>
           <p class="muted">Dernière mise à jour {{ formatDate(task.updated_at) }}</p>
         </template>
 
         <form v-else @submit.prevent="saveEdit">
           <div class="form-row">
             <div class="field">
-              <label>Titre</label>
+              <label>Numéro d'affaire</label>
               <input v-model="editDraft.title" required />
             </div>
             <div class="field">
               <label>Statut</label>
               <select v-model="editDraft.status">
-                <option value="active">Actif</option>
+                <option value="active">En cours</option>
                 <option value="paused">En pause</option>
                 <option value="done">Terminé</option>
               </select>
@@ -319,8 +335,21 @@ onMounted(load);
               </select>
             </div>
             <div class="field">
-              <label>Date prévue</label>
+              <label>Date exécution chantier</label>
               <input v-model="editDraft.due_date" type="date" />
+            </div>
+            <div class="field">
+              <label>Date finale</label>
+              <input v-model="editDraft.final_date" type="date" />
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="field">
+              <label>Tâche parente</label>
+              <select v-model="editDraft.parent_task_id">
+                <option value="">— aucune —</option>
+                <option v-for="pt in parentOptions" :key="pt.id" :value="pt.id">{{ pt.title }}</option>
+              </select>
             </div>
             <div v-if="auth.isManager" class="field">
               <label>Assigné à</label>
@@ -335,6 +364,18 @@ onMounted(load);
             <button type="button" class="secondary" @click="editing = false">Annuler</button>
           </div>
         </form>
+      </div>
+
+      <div v-if="subtasks.length" class="card">
+        <h2>Sous-tâches ({{ subtasks.length }})</h2>
+        <table>
+          <tbody>
+            <tr v-for="st in subtasks" :key="st.id">
+              <td><RouterLink :to="`/tasks/${st.id}`">{{ st.title }}</RouterLink></td>
+              <td><span class="badge" :class="st.status">{{ statusLabel(st.status) }}</span></td>
+            </tr>
+          </tbody>
+        </table>
       </div>
 
       <div class="card">
