@@ -60,9 +60,6 @@ router.post(
     const nativeFile = req.files?.file?.[0];
     const previewImage = req.files?.previewImage?.[0];
     if (!nativeFile) return res.status(400).json({ error: "Le fichier est obligatoire" });
-    if (!previewImage) {
-      return res.status(400).json({ error: "L'image d'aperçu est obligatoire (export SolidWorks en PNG/JPEG)" });
-    }
 
     const toRelative = (f) => path.relative(UPLOAD_DIR, f.path).split(path.sep).join('/');
 

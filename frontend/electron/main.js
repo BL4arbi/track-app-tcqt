@@ -1,10 +1,15 @@
-import { app, BrowserWindow, dialog } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain } from 'electron';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { autoUpdater } from 'electron-updater';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isDev = !app.isPackaged;
+
+ipcMain.handle('generate-sw-preview', async (_event, nativeFilePath) => {
+  const { generateSolidWorksPreview } = await import('./solidworksPreview.js');
+  return generateSolidWorksPreview(nativeFilePath);
+});
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -14,6 +19,7 @@ function createWindow() {
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
+      preload: path.join(__dirname, 'preload.cjs'),
     },
   });
 

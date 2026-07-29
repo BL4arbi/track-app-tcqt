@@ -18,6 +18,10 @@ const previewFile = ref(null);
 const uploadError = ref('');
 const uploading = ref(false);
 
+const isElectron = typeof window !== 'undefined' && !!window.electronAPI;
+const generatingPreview = ref(false);
+const generatePreviewError = ref('');
+
 const addingPreviewFor = ref(null);
 const previewOnlyFile = ref(null);
 const previewOnlyError = ref('');
@@ -100,13 +104,9 @@ async function upload() {
     uploadError.value = 'Sélectionnez le fichier SolidWorks natif (ou PDF) à envoyer';
     return;
   }
-  if (!previewFile.value) {
-    uploadError.value = "Exportez et sélectionnez une image d'aperçu (SolidWorks : Fichier > Enregistrer sous > PNG/JPEG)";
-    return;
-  }
   const form = new FormData();
   form.append('file', nativeFile.value);
-  form.append('previewImage', previewFile.value);
+  if (previewFile.value) form.append('previewImage', previewFile.value);
 
   uploading.value = true;
   try {
@@ -120,6 +120,31 @@ async function upload() {
     uploadError.value = e.response?.data?.error || "Échec de l'envoi";
   } finally {
     uploading.value = false;
+  }
+}
+
+async function generatePreviewFromSolidWorks() {
+  generatePreviewError.value = '';
+  const localPath = nativeFile.value?.path;
+  if (!localPath) {
+    generatePreviewError.value = 'Sélectionnez d\'abord le fichier natif';
+    return;
+  }
+  generatingPreview.value = true;
+  try {
+    const result = await window.electronAPI.generateSolidWorksPreview(localPath);
+    if (!result.success) {
+      generatePreviewError.value = result.error || 'Échec de la génération automatique';
+      return;
+    }
+    const byteChars = atob(result.base64);
+    const bytes = new Uint8Array(byteChars.length);
+    for (let i = 0; i < byteChars.length; i++) bytes[i] = byteChars.charCodeAt(i);
+    previewFile.value = new File([bytes], 'apercu-solidworks.png', { type: 'image/png' });
+  } catch (e) {
+    generatePreviewError.value = e.message || 'Échec de la génération automatique';
+  } finally {
+    generatingPreview.value = false;
   }
 }
 
@@ -261,8 +286,20 @@ onMounted(load);
               <input type="file" @change="nativeFile = $event.target.files[0]" />
             </div>
             <div class="field">
-              <label>Image d'aperçu (.png / .jpg) — obligatoire</label>
+              <label>Image d'aperçu (.png / .jpg)</label>
               <input type="file" @change="previewFile = $event.target.files[0]" />
+              <button
+                v-if="isElectron"
+                type="button"
+                class="secondary"
+                style="margin-top:6px"
+                :disabled="!nativeFile || generatingPreview"
+                @click="generatePreviewFromSolidWorks"
+              >
+                {{ generatingPreview ? 'Génération…' : 'Générer via SolidWorks (bêta)' }}
+              </button>
+              <p v-if="generatePreviewError" class="error-text">{{ generatePreviewError }}</p>
+              <p v-if="previewFile?.name === 'apercu-solidworks.png'" class="success-text">Aperçu généré automatiquement ✓</p>
             </div>
           </div>
           <p v-if="uploadError" class="error-text">{{ uploadError }}</p>
