@@ -12,6 +12,7 @@ const auth = useAuthStore();
 const task = ref(null);
 const history = ref([]);
 const documents = ref([]);
+const teamMembers = ref([]);
 const loading = ref(true);
 const error = ref('');
 
@@ -78,10 +79,13 @@ async function load() {
   loading.value = true;
   error.value = '';
   try {
-    const { data } = await api.get(`/api/tasks/${route.params.id}`);
-    task.value = data.task;
-    history.value = data.history;
-    documents.value = data.documents;
+    const requests = [api.get(`/api/tasks/${route.params.id}`)];
+    if (auth.isManager) requests.push(api.get('/api/users/directory'));
+    const [taskRes, teamRes] = await Promise.all(requests);
+    task.value = taskRes.data.task;
+    history.value = taskRes.data.history;
+    documents.value = taskRes.data.documents;
+    if (teamRes) teamMembers.value = teamRes.data.users;
   } catch (e) {
     error.value = e.response?.data?.error || 'Échec du chargement de la tâche';
   } finally {
@@ -95,6 +99,7 @@ function startEdit() {
     current_step: task.value.current_step || '',
     due_date: task.value.due_date || '',
     status: task.value.status,
+    assigned_user_id: task.value.assigned_user_id,
   });
   saveError.value = '';
   editing.value = true;
@@ -316,6 +321,12 @@ onMounted(load);
             <div class="field">
               <label>Date prévue</label>
               <input v-model="editDraft.due_date" type="date" />
+            </div>
+            <div v-if="auth.isManager" class="field">
+              <label>Assigné à</label>
+              <select v-model="editDraft.assigned_user_id">
+                <option v-for="m in teamMembers" :key="m.id" :value="m.id">{{ m.full_name }}</option>
+              </select>
             </div>
           </div>
           <p v-if="saveError" class="error-text">{{ saveError }}</p>
