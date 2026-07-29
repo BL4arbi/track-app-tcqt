@@ -22,16 +22,14 @@
   background: var(--bg);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --text: #c9c8cf;
-    --text-h: #f3f4f6;
-    --bg: #16171d;
-    --bg-subtle: #1d1e26;
-    --border: #2e303a;
-    --accent: #e6435c;
-    --accent-bg: rgba(230, 67, 92, 0.15);
-  }
+:root[data-theme='dark'] {
+  --text: #c9c8cf;
+  --text-h: #f3f4f6;
+  --bg: #16171d;
+  --bg-subtle: #1d1e26;
+  --border: #2e303a;
+  --accent: #e6435c;
+  --accent-bg: rgba(230, 67, 92, 0.15);
 }
 
 * { box-sizing: border-box; }

@@ -4,6 +4,7 @@ export const WORKFLOW_STEPS = [
   'Conception / Implémentation',
   'Achat matière',
   'Commande reçu',
+  'Fabrication',
   'Préparation chantier',
   'Départ chantier',
 ];

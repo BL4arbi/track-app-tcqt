@@ -4,8 +4,13 @@ import './style.css';
 import App from './App.vue';
 import router from './router';
 import { useAuthStore } from './store/auth';
+import { initTheme } from './utils/theme';
 
 async function bootstrap() {
+  // Before mount, so the correct theme (saved choice or OS preference) is
+  // applied from the first paint instead of flashing the default.
+  initTheme();
+
   const pinia = createPinia();
   setActivePinia(pinia);
 

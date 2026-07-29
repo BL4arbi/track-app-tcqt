@@ -40,8 +40,22 @@ export async function generateSolidWorksPreview(nativeFilePath) {
   const scriptPath = path.join(__dirname, 'solidworks-preview.vbs');
   const id = randomUUID();
   const tmpPng = path.join(os.tmpdir(), `sw-preview-${id}.png`);
+  const tmpLog = `${tmpPng}.log`;
   const wantsStl = SOLID_EXTENSIONS.has(ext);
   const tmpStl = wantsStl ? path.join(os.tmpdir(), `sw-preview-${id}.stl`) : null;
+
+  // The script logs each step to this file, flushed immediately after every
+  // write — so even if cscript.exe crashes outright (observed on some large
+  // assemblies, with zero stderr output despite every failure path writing
+  // to it) we still have a trail of exactly how far it got.
+  async function readStepLog() {
+    try {
+      const content = await readFile(tmpLog, 'utf8');
+      return content.trim();
+    } catch {
+      return '';
+    }
+  }
 
   try {
     const args = ['//nologo', scriptPath, nativeFilePath, tmpPng];
@@ -68,6 +82,9 @@ export async function generateSolidWorksPreview(nativeFilePath) {
 
     return result;
   } catch (e) {
+    const stepLog = await readStepLog();
+    const logSuffix = stepLog ? `\n\nDétail des étapes :\n${stepLog}` : '';
+
     // A timeout kill leaves stderr empty (cscript never got to write to it)
     // — that blank-error shape usually means SolidWorks popped a dialog
     // (e.g. asking to resolve/locate a missing referenced part) and is
@@ -77,18 +94,25 @@ export async function generateSolidWorksPreview(nativeFilePath) {
         success: false,
         error: `L'ouverture a dépassé le délai de ${Math.round(timeoutMs / 60_000)} min et a été interrompue. ` +
           "Le fichier est peut-être très volumineux, ou SolidWorks attend une réponse à une boîte de dialogue " +
-          "(référence introuvable, etc.) — ouvrez le fichier manuellement dans SolidWorks pour vérifier.",
+          "(référence introuvable, etc.) — ouvrez le fichier manuellement dans SolidWorks pour vérifier." + logSuffix,
       };
     }
     // Otherwise execFile errors include stderr, which carries the
     // VBScript/COM exception message — surface that, it's the actionable part.
+    // If stderr is also empty, cscript.exe likely crashed outright — the
+    // step log is then the only real diagnostic available.
     const detail = e.stderr?.toString().trim() || e.message;
-    return { success: false, error: detail };
+    return { success: false, error: detail + logSuffix };
   } finally {
     try {
       await unlink(tmpPng);
     } catch {
       // temp file may not have been created if export failed
+    }
+    try {
+      await unlink(tmpLog);
+    } catch {
+      // log file may not exist if the script crashed before writing anything
     }
     if (tmpStl) {
       try {
