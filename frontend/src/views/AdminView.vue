@@ -131,7 +131,19 @@ onMounted(load);
                   <option value="manager">Manager</option>
                 </select>
               </td>
-              <td>{{ u.email_verified ? 'Oui' : 'Non' }}</td>
+              <td>
+                <span v-if="u.email_verified">Oui</span>
+                <button
+                  v-else
+                  type="button"
+                  class="link-button"
+                  :disabled="savingId === u.id"
+                  @click="updateUser(u, { email_verified: true })"
+                  title="À utiliser si le lien de vérification par email n'a pas fonctionné"
+                >
+                  Non — marquer comme vérifié
+                </button>
+              </td>
               <td>
                 <label style="display:flex; align-items:center; gap:6px; font-weight:normal">
                   <input

@@ -29,7 +29,7 @@ router.patch('/:id', async (req, res) => {
   const existing = existingRows[0];
   if (!existing) return res.status(404).json({ error: "Utilisateur introuvable" });
 
-  const { role, active } = req.body || {};
+  const { role, active, email_verified } = req.body || {};
   if (role && !['engineer', 'manager'].includes(role)) {
     return res.status(400).json({ error: "Le rôle doit être engineer ou manager" });
   }
@@ -40,12 +40,13 @@ router.patch('/:id', async (req, res) => {
   const next = {
     role: role ?? existing.role,
     active: typeof active === 'boolean' ? active : existing.active,
+    email_verified: typeof email_verified === 'boolean' ? email_verified : existing.email_verified,
   };
 
   const { rows } = await pool.query(
-    `UPDATE users SET role = $1, active = $2 WHERE id = $3
+    `UPDATE users SET role = $1, active = $2, email_verified = $3 WHERE id = $4
      RETURNING id, full_name, company_email, role, active, email_verified, created_at`,
-    [next.role, next.active, existing.id]
+    [next.role, next.active, next.email_verified, existing.id]
   );
   res.json({ user: rows[0] });
 });
