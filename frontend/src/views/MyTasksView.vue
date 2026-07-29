@@ -26,6 +26,20 @@ const STATUS_LABELS = { active: 'En cours', paused: 'En pause', done: 'Terminé'
 
 const parentOptions = computed(() => (excludeId) => tasks.value.filter((t) => t.id !== excludeId));
 
+const todayKey = new Date().toISOString().slice(0, 10);
+const reminderKey = (t) => t.final_date || t.due_date;
+const overdueTasks = computed(() =>
+  tasks.value.filter((t) => t.status === 'active' && reminderKey(t) && reminderKey(t) < todayKey)
+);
+const upcomingTasks = computed(() => {
+  const in7Days = new Date();
+  in7Days.setDate(in7Days.getDate() + 7);
+  const in7DaysKey = in7Days.toISOString().slice(0, 10);
+  return tasks.value.filter(
+    (t) => t.status === 'active' && reminderKey(t) && reminderKey(t) >= todayKey && reminderKey(t) <= in7DaysKey
+  );
+});
+
 async function load() {
   loading.value = true;
   error.value = '';
@@ -119,6 +133,20 @@ onMounted(load);
 <template>
   <div>
     <h1>Mes tâches</h1>
+
+    <div v-if="overdueTasks.length || upcomingTasks.length" class="card reminder-card">
+      <h2>Rappels</h2>
+      <ul class="reminder-list">
+        <li v-for="t in overdueTasks" :key="'overdue-' + t.id" class="reminder-overdue">
+          <RouterLink :to="`/tasks/${t.id}`">{{ t.title }}</RouterLink>
+          — en retard (échéance {{ reminderKey(t) }})
+        </li>
+        <li v-for="t in upcomingTasks" :key="'upcoming-' + t.id">
+          <RouterLink :to="`/tasks/${t.id}`">{{ t.title }}</RouterLink>
+          — échéance proche ({{ reminderKey(t) }})
+        </li>
+      </ul>
+    </div>
 
     <div class="card">
       <h2>Nouvelle tâche</h2>
