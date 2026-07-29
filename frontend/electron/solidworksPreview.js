@@ -1,15 +1,16 @@
 // Automatic preview generation by driving a locally-installed, locally-
-// licensed SolidWorks via its COM automation API, through PowerShell (which
-// has built-in COM interop — no native Node addon to compile/break). Runs
-// only in the Electron main process, on Windows, and only works if
-// SolidWorks is installed on this machine — it never touches the server
-// (no license there).
+// licensed SolidWorks via its COM automation API, through VBScript (cscript,
+// built into Windows). Runs only in the Electron main process, on Windows,
+// and only works if SolidWorks is installed on this machine — it never
+// touches the server (no license there).
 //
-// NOTE: written against documented SolidWorks API method/enum names, but
-// not verified against a real running SolidWorks instance (none available
-// in the dev environment this was built in). If it errors, the exact
-// PowerShell/COM error message is returned so it can be fixed against real
-// behavior.
+// VBScript, not PowerShell: verified directly against this dev machine's
+// real, licensed SolidWorks 2023 install. PowerShell's .NET COM interop
+// has a confirmed bug here — property access on the SldWorks.Application
+// object works, but every method call (OpenDoc6, RevisionNumber, anything)
+// throws TYPE_E_ELEMENTNOTFOUND. VBScript's classic OLE Automation binder
+// doesn't have that problem; the full open → zoom-to-fit → export pipeline
+// was confirmed working end-to-end against a real uploaded part file.
 
 import path from 'node:path';
 import os from 'node:os';
@@ -34,27 +35,20 @@ export async function generateSolidWorksPreview(nativeFilePath) {
     return { success: false, error: `Type de fichier non pris en charge pour la génération auto : ${ext}` };
   }
 
-  const scriptPath = path.join(__dirname, 'solidworks-preview.ps1');
+  const scriptPath = path.join(__dirname, 'solidworks-preview.vbs');
   const tmpPng = path.join(os.tmpdir(), `sw-preview-${randomUUID()}.png`);
 
   try {
     await execFileAsync(
-      'powershell.exe',
-      [
-        '-NoProfile',
-        '-NonInteractive',
-        '-ExecutionPolicy', 'Bypass',
-        '-File', scriptPath,
-        '-FilePath', nativeFilePath,
-        '-OutputPath', tmpPng,
-      ],
+      'cscript.exe',
+      ['//nologo', scriptPath, nativeFilePath, tmpPng],
       { timeout: 120_000 }
     );
 
     const buffer = await readFile(tmpPng);
     return { success: true, base64: buffer.toString('base64') };
   } catch (e) {
-    // execFile errors include stderr, which carries the PowerShell/COM
+    // execFile errors include stderr, which carries the VBScript/COM
     // exception message — surface that, it's the actionable part.
     const detail = e.stderr?.toString().trim() || e.message;
     return { success: false, error: detail };
