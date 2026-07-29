@@ -1,6 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain } from 'electron';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { appendFileSync } from 'node:fs';
 import electronUpdater from 'electron-updater';
 const { autoUpdater } = electronUpdater;
 
@@ -31,8 +32,28 @@ function createWindow() {
   }
 }
 
+const updateLogPath = path.join(app.getPath('userData'), 'update-log.txt');
+function logUpdate(msg) {
+  const line = `[${new Date().toISOString()}] ${msg}\n`;
+  console.log(line.trim());
+  try {
+    appendFileSync(updateLogPath, line);
+  } catch {
+    // logging is best-effort, never block the update flow on it
+  }
+}
+
 function setupAutoUpdate() {
-  autoUpdater.on('update-downloaded', async () => {
+  logUpdate(`Starting update check. Current version: ${app.getVersion()}`);
+
+  autoUpdater.on('checking-for-update', () => logUpdate('checking-for-update'));
+  autoUpdater.on('update-available', (info) => logUpdate(`update-available: ${JSON.stringify(info)}`));
+  autoUpdater.on('update-not-available', (info) => logUpdate(`update-not-available: ${JSON.stringify(info)}`));
+  autoUpdater.on('error', (err) => logUpdate(`error: ${err?.stack || err}`));
+  autoUpdater.on('download-progress', (p) => logUpdate(`download-progress: ${p.percent?.toFixed(1)}%`));
+
+  autoUpdater.on('update-downloaded', async (info) => {
+    logUpdate(`update-downloaded: ${JSON.stringify(info)}`);
     const { response } = await dialog.showMessageBox({
       type: 'info',
       buttons: ['Restart now', 'Later'],
@@ -42,6 +63,7 @@ function setupAutoUpdate() {
     });
     if (response === 0) autoUpdater.quitAndInstall();
   });
+
   autoUpdater.checkForUpdatesAndNotify();
 }
 
