@@ -125,9 +125,13 @@ async function upload() {
 
 async function generatePreviewFromSolidWorks() {
   generatePreviewError.value = '';
-  const localPath = nativeFile.value?.path;
+  if (!nativeFile.value) {
+    generatePreviewError.value = "Sélectionnez d'abord le fichier natif";
+    return;
+  }
+  const localPath = window.electronAPI.getPathForFile(nativeFile.value);
   if (!localPath) {
-    generatePreviewError.value = 'Sélectionnez d\'abord le fichier natif';
+    generatePreviewError.value = "Impossible de résoudre le chemin du fichier sélectionné";
     return;
   }
   generatingPreview.value = true;
