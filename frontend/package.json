@@ -1,7 +1,7 @@
 {
   "name": "solidworks-tracker",
   "private": true,
-  "version": "0.1.4",
+  "version": "0.1.5",
   "type": "module",
   "description": "Internal SolidWorks team task tracker (desktop client)",
   "author": "BL4arbi",
@@ -38,6 +38,7 @@
   "build": {
     "appId": "com.tacquet.trackapp",
     "productName": "SolidWorks Team Tracker",
+    "artifactName": "SolidWorks-Team-Tracker-Setup-${version}.${ext}",
     "icon": "asset/icon.ico",
     "files": [
       "dist/**/*",

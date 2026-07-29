@@ -59,23 +59,22 @@ npm run release           # same, plus bumps the patch version first (needed so 
 
 Releases are published manually, not via CI/token:
 1. Run `npm run release`.
-2. **Before uploading**, rename the installer in `frontend/release/` to remove the spaces —
-   e.g. `SolidWorks Team Tracker Setup 0.1.5.exe` → `SolidWorks-Team-Tracker-Setup-0.1.5.exe`
-   (rename the `.blockmap` to match too, if you're using it). This is required, not cosmetic:
-   `latest.yml` declares the dash-separated filename, but GitHub's release-asset upload replaces
-   spaces in the *original* filename with **periods**, not dashes — confirmed by hitting exactly
-   this bug — so an un-renamed upload silently breaks the update download (detected as available,
-   404s when it tries to fetch the file) even though the release itself looks fine. Renaming to
-   remove spaces entirely before upload sidesteps GitHub's substitution altogether.
-3. On GitHub, create a new Release with a tag matching the bumped version (e.g. `v0.1.5`), and
-   upload the renamed `.exe` (+ `.blockmap` if used) and `latest.yml` from `frontend/release/`.
-4. Hit **Publish release** — not just save as draft. `electron-updater` only sees published
+2. On GitHub, create a new Release with a tag matching the bumped version (e.g. `v0.1.5`), and
+   drag in the `.exe`, `.blockmap`, and `latest.yml` from `frontend/release/` — no renaming, drag
+   them exactly as they are.
+3. Hit **Publish release** — not just save as draft. `electron-updater` only sees published
    releases; drafts and pre-releases are invisible to the update check.
-5. Every running desktop client checks on launch, downloads the update in the background if
+4. Every running desktop client checks on launch, downloads the update in the background if
    there's a newer version, and prompts "restart now / later" to install it. Update-check
    activity is logged to `update-log.txt` in the app's userData folder (Windows:
    `%APPDATA%\solidworks-tracker\update-log.txt` — note lowercase, that's `package.json`'s
    `name`, not the `productName` shown in the title bar) if something needs debugging.
+
+`build.artifactName` in `frontend/package.json` is set to
+`SolidWorks-Team-Tracker-Setup-${version}.${ext}` specifically so the built filename never
+contains spaces — GitHub's release-asset upload silently replaces spaces in filenames with
+periods, which broke the update download the one time this shipped with the default
+space-filled name. Don't remove that setting or reintroduce spaces into it.
 
 Other notes:
 - The installer is unsigned, so Windows SmartScreen will flag it on first run — expected for an
