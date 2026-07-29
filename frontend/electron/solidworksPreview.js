@@ -47,7 +47,12 @@ export async function generateSolidWorksPreview(nativeFilePath) {
     const args = ['//nologo', scriptPath, nativeFilePath, tmpPng];
     if (tmpStl) args.push(tmpStl);
 
-    await execFileAsync('cscript.exe', args, { timeout: 120_000 });
+    // Large assemblies opened from a network drive can take several minutes
+    // (SolidWorks has to resolve and load every referenced part over the
+    // network). 10 minutes gives real large-assembly opens room to finish
+    // without leaving a hung SolidWorks process running indefinitely.
+    const timeoutMs = 10 * 60_000;
+    await execFileAsync('cscript.exe', args, { timeout: timeoutMs });
 
     const pngBuffer = await readFile(tmpPng);
     const result = { success: true, base64: pngBuffer.toString('base64') };
@@ -63,8 +68,20 @@ export async function generateSolidWorksPreview(nativeFilePath) {
 
     return result;
   } catch (e) {
-    // execFile errors include stderr, which carries the VBScript/COM
-    // exception message — surface that, it's the actionable part.
+    // A timeout kill leaves stderr empty (cscript never got to write to it)
+    // — that blank-error shape usually means SolidWorks popped a dialog
+    // (e.g. asking to resolve/locate a missing referenced part) and is
+    // sitting there waiting for a click nobody can give it headlessly.
+    if (e.killed && e.signal) {
+      return {
+        success: false,
+        error: `L'ouverture a dépassé le délai de ${Math.round(timeoutMs / 60_000)} min et a été interrompue. ` +
+          "Le fichier est peut-être très volumineux, ou SolidWorks attend une réponse à une boîte de dialogue " +
+          "(référence introuvable, etc.) — ouvrez le fichier manuellement dans SolidWorks pour vérifier.",
+      };
+    }
+    // Otherwise execFile errors include stderr, which carries the
+    // VBScript/COM exception message — surface that, it's the actionable part.
     const detail = e.stderr?.toString().trim() || e.message;
     return { success: false, error: detail };
   } finally {
