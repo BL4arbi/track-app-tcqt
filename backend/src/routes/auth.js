@@ -51,16 +51,40 @@ router.post('/signup', async (req, res) => {
   res.status(201).json({ message: "Compte créé. Vérifiez votre email pour activer votre compte.", user });
 });
 
+// Hit directly from the email link (not the frontend) — a plain GET the
+// backend can fully handle itself, so verifying an account never depends
+// on the frontend/desktop app being installed or running anywhere.
+function verifyResultPage({ ok, message }) {
+  const loginLink = process.env.APP_BASE_URL ? `${process.env.APP_BASE_URL}/#/login` : null;
+  return `<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><title>SolidWorks Tracker</title>
+<style>
+  body { font-family: system-ui, sans-serif; display: flex; align-items: center; justify-content: center;
+         min-height: 100vh; margin: 0; background: #f7f7f9; color: #08060d; }
+  .card { max-width: 420px; padding: 32px; border: 1px solid #e2e1e6; border-radius: 8px; background: #fff; text-align: center; }
+  h1 { font-size: 18px; margin: 0 0 12px; }
+  p { margin: 0 0 16px; color: ${ok ? '#1a7f4b' : '#c0362c'}; }
+  a { color: #6c3bff; }
+</style></head>
+<body><div class="card">
+  <h1>SolidWorks Team Tracker</h1>
+  <p>${message}</p>
+  ${loginLink ? `<a href="${loginLink}">Aller à la connexion</a>` : ''}
+</div></body></html>`;
+}
+
 router.get('/verify-email', async (req, res) => {
   const { token } = req.query;
-  if (!token) return res.status(400).json({ error: "Jeton manquant" });
+  if (!token) {
+    return res.status(400).send(verifyResultPage({ ok: false, message: 'Jeton manquant.' }));
+  }
   try {
     const payload = verifyToken(token);
     if (payload.purpose !== 'verify_email') throw new Error('wrong purpose');
     await pool.query('UPDATE users SET email_verified = TRUE WHERE id = $1', [payload.sub]);
-    res.json({ message: "Email vérifié. Vous pouvez maintenant vous connecter." });
+    res.send(verifyResultPage({ ok: true, message: 'Email vérifié. Vous pouvez maintenant vous connecter.' }));
   } catch {
-    res.status(400).json({ error: "Lien de vérification invalide ou expiré" });
+    res.status(400).send(verifyResultPage({ ok: false, message: 'Lien de vérification invalide ou expiré.' }));
   }
 });
 

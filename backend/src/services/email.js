@@ -32,7 +32,12 @@ export async function sendMail({ to, subject, html }) {
 }
 
 export function verificationEmail(token) {
-  const link = `${process.env.APP_BASE_URL}/#/verify-email?token=${token}`;
+  // Points at the backend directly, not the frontend: verifying is a pure
+  // one-click confirmation with no further input needed, so the backend can
+  // just do it and return a confirmation page itself — no dependency on the
+  // frontend (a separate process/server) being up at all. Password reset
+  // still needs the frontend, since it requires a form.
+  const link = `${process.env.API_BASE_URL}/api/auth/verify-email?token=${token}`;
   return {
     subject: 'Vérifiez votre compte SolidWorks Tracker',
     html: `<p>Bienvenue sur SolidWorks Tracker. Cliquez sur le lien ci-dessous pour vérifier votre compte :</p>
