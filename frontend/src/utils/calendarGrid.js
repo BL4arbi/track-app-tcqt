@@ -6,6 +6,18 @@ export function toDateKey(year, month, day) {
   return `${year}-${pad(month + 1)}-${pad(day)}`;
 }
 
+// ISO-8601 week number for the week containing this date.
+export function isoWeekNumber(year, month, day) {
+  const date = new Date(Date.UTC(year, month, day));
+  // ISO weeks start Monday; shift so day 0 = Monday, then snap to that week's Thursday.
+  const dayNum = (date.getUTCDay() + 6) % 7;
+  date.setUTCDate(date.getUTCDate() - dayNum + 3);
+  const firstThursday = new Date(Date.UTC(date.getUTCFullYear(), 0, 4));
+  const firstDayNum = (firstThursday.getUTCDay() + 6) % 7;
+  firstThursday.setUTCDate(firstThursday.getUTCDate() - firstDayNum + 3);
+  return 1 + Math.round((date - firstThursday) / (7 * 24 * 60 * 60 * 1000));
+}
+
 // Monday-first month grid: array of weeks, each an array of
 // { dateKey, day, inMonth, isToday }.
 export function buildMonthGrid(year, month) {
@@ -42,7 +54,12 @@ export function buildMonthGrid(year, month) {
   }
 
   const weeks = [];
-  for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7));
+  for (let i = 0; i < cells.length; i += 7) {
+    const week = cells.slice(i, i + 7);
+    const [y, m, d] = week[0].dateKey.split('-').map(Number);
+    week.weekNumber = isoWeekNumber(y, m - 1, d);
+    weeks.push(week);
+  }
   return weeks;
 }
 

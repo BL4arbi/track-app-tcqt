@@ -11,7 +11,6 @@ const router = Router();
 router.use(requireAuth);
 
 const UPLOAD_DIR = process.env.UPLOAD_DIR || './uploads';
-const NATIVE_EXTENSIONS = new Set(['.sldprt', '.sldasm', '.slddrw', '.pdf']);
 const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg']);
 const MODEL_EXTENSIONS = new Set(['.stl']);
 
@@ -39,9 +38,7 @@ const storage = multer.diskStorage({
 
 function fileFilter(_req, file, cb) {
   const ext = path.extname(fixFilenameEncoding(file.originalname)).toLowerCase();
-  if (file.fieldname === 'file' && !NATIVE_EXTENSIONS.has(ext)) {
-    return cb(new Error(`Type de fichier natif non supporté : ${ext}`));
-  }
+  // The main "file" field accepts any file type — no whitelist.
   if (file.fieldname === 'previewImage' && !IMAGE_EXTENSIONS.has(ext)) {
     return cb(new Error(`L'aperçu doit être un png/jpg, reçu : ${ext}`));
   }

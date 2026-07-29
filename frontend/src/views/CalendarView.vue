@@ -86,9 +86,11 @@ onMounted(load);
       </div>
 
       <div class="calendar-grid">
+        <div class="calendar-week-number">Sem.</div>
         <div v-for="wd in WEEKDAY_NAMES_FR" :key="wd" class="calendar-weekday">{{ wd }}</div>
 
         <template v-for="week in weeks" :key="week[0].dateKey">
+          <div class="calendar-week-number">{{ week.weekNumber }}</div>
           <div
             v-for="cell in week"
             :key="cell.dateKey"

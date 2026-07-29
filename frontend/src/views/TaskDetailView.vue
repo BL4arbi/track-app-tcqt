@@ -13,6 +13,11 @@ const task = ref(null);
 const history = ref([]);
 const documents = ref([]);
 const subtasks = ref([]);
+const parts = ref([]);
+const newPartName = ref('');
+const newPartComment = ref('');
+const addingPart = ref(false);
+const partError = ref('');
 const teamMembers = ref([]);
 const parentOptions = ref([]);
 const loading = ref(true);
@@ -88,6 +93,7 @@ async function load() {
     history.value = taskRes.data.history;
     documents.value = taskRes.data.documents;
     subtasks.value = taskRes.data.subtasks;
+    parts.value = taskRes.data.parts;
     parentOptions.value = mineRes.data.tasks.filter((t) => t.id !== task.value.id);
     if (teamRes) teamMembers.value = teamRes.data.users;
   } catch (e) {
@@ -252,6 +258,39 @@ function toggleModel(docId) {
   viewingModelFor.value = viewingModelFor.value === docId ? null : docId;
 }
 
+async function addPart() {
+  partError.value = '';
+  if (!newPartName.value.trim()) {
+    partError.value = 'Le nom de la pièce est obligatoire';
+    return;
+  }
+  addingPart.value = true;
+  try {
+    await api.post(`/api/tasks/${route.params.id}/parts`, {
+      name: newPartName.value.trim(),
+      comment: newPartComment.value.trim() || null,
+    });
+    newPartName.value = '';
+    newPartComment.value = '';
+    await load();
+  } catch (e) {
+    partError.value = e.response?.data?.error || "Échec de l'ajout";
+  } finally {
+    addingPart.value = false;
+  }
+}
+
+async function togglePartDone(part) {
+  await api.patch(`/api/tasks/parts/${part.id}`, { done: !part.done });
+  await load();
+}
+
+async function deletePart(part) {
+  if (!confirm(`Supprimer "${part.name}" de la liste des pièces à fabriquer ?`)) return;
+  await api.delete(`/api/tasks/parts/${part.id}`);
+  await load();
+}
+
 onMounted(load);
 </script>
 
@@ -379,6 +418,41 @@ onMounted(load);
       </div>
 
       <div class="card">
+        <h2>Pièces à fabriquer ({{ parts.length }})</h2>
+        <div v-if="!parts.length" class="muted">Aucune pièce à fabriquer en interne pour l'instant.</div>
+        <table v-else>
+          <tbody>
+            <tr v-for="p in parts" :key="p.id">
+              <td style="width:1%">
+                <input type="checkbox" :checked="p.done" :disabled="!canEdit" @change="togglePartDone(p)" />
+              </td>
+              <td :style="{ textDecoration: p.done ? 'line-through' : 'none' }">
+                {{ p.name }}
+                <div v-if="p.comment" class="muted">{{ p.comment }}</div>
+              </td>
+              <td style="text-align:right">
+                <button v-if="canEdit" type="button" class="link-button" style="color:var(--danger)" @click="deletePart(p)">Supprimer</button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <form v-if="canEdit" @submit.prevent="addPart" style="margin-top:12px">
+          <div class="form-row">
+            <div class="field">
+              <label>Pièce à fabriquer</label>
+              <input v-model="newPartName" placeholder="ex. Bride support" />
+            </div>
+            <div class="field">
+              <label>Commentaire (facultatif)</label>
+              <input v-model="newPartComment" placeholder="ex. Alu 6mm, 2 exemplaires" />
+            </div>
+          </div>
+          <p v-if="partError" class="error-text">{{ partError }}</p>
+          <button type="submit" :disabled="addingPart">{{ addingPart ? 'Ajout…' : 'Ajouter' }}</button>
+        </form>
+      </div>
+
+      <div class="card">
         <h2>Documents</h2>
         <p v-if="deleteError" class="error-text">{{ deleteError }}</p>
         <div v-if="!documents.length" class="muted">Aucun document envoyé pour l'instant.</div>
@@ -424,7 +498,7 @@ onMounted(load);
         <form @submit.prevent="upload" style="margin-top:16px">
           <div class="form-row">
             <div class="field">
-              <label>Fichier natif (.sldprt / .sldasm / .slddrw / .pdf)</label>
+              <label>Fichier (tous types acceptés)</label>
               <input type="file" @change="nativeFile = $event.target.files[0]" />
             </div>
             <div class="field">

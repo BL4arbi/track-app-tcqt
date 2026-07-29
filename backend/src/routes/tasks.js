@@ -60,7 +60,7 @@ router.get('/:id', async (req, res) => {
   const task = rows[0];
   if (!task) return res.status(404).json({ error: "Tâche introuvable" });
 
-  const [{ rows: history }, { rows: documents }, { rows: subtasks }] = await Promise.all([
+  const [{ rows: history }, { rows: documents }, { rows: subtasks }, { rows: parts }] = await Promise.all([
     pool.query(
       `SELECT h.id, h.old_step, h.new_step, h.old_status, h.new_status, h.changed_at,
               u.full_name AS changed_by
@@ -79,9 +79,13 @@ router.get('/:id', async (req, res) => {
       `SELECT id, title, status FROM tasks WHERE parent_task_id = $1 ORDER BY created_at`,
       [task.id]
     ),
+    pool.query(
+      `SELECT id, name, comment, done, created_at FROM task_parts WHERE task_id = $1 ORDER BY created_at`,
+      [task.id]
+    ),
   ]);
 
-  res.json({ task, history, documents, subtasks });
+  res.json({ task, history, documents, subtasks, parts });
 });
 
 router.post('/', async (req, res) => {
@@ -202,6 +206,61 @@ router.delete('/:id', async (req, res) => {
     })
   );
 
+  res.status(204).end();
+});
+
+// Manufactured-parts checklist: in-house elements to build for a task,
+// each with an optional comment and a done flag.
+router.post('/:id/parts', async (req, res) => {
+  const { rows: taskRows } = await pool.query('SELECT * FROM tasks WHERE id = $1', [req.params.id]);
+  const task = taskRows[0];
+  if (!task) return res.status(404).json({ error: "Tâche introuvable" });
+
+  const canEdit = req.user.role === 'manager' || task.assigned_user_id === req.user.id;
+  if (!canEdit) return res.status(403).json({ error: "Vous ne pouvez modifier que vos propres tâches" });
+
+  const { name, comment } = req.body || {};
+  if (!name) return res.status(400).json({ error: "Le nom de la pièce est obligatoire" });
+
+  const { rows } = await pool.query(
+    `INSERT INTO task_parts (task_id, name, comment) VALUES ($1, $2, $3) RETURNING id, name, comment, done, created_at`,
+    [task.id, name, comment || null]
+  );
+  res.status(201).json({ part: rows[0] });
+});
+
+async function loadPartForEdit(req, res, next) {
+  const { rows } = await pool.query(
+    `SELECT p.*, t.assigned_user_id
+     FROM task_parts p JOIN tasks t ON t.id = p.task_id
+     WHERE p.id = $1`,
+    [req.params.partId]
+  );
+  const part = rows[0];
+  if (!part) return res.status(404).json({ error: "Pièce introuvable" });
+  const canEdit = req.user.role === 'manager' || part.assigned_user_id === req.user.id;
+  if (!canEdit) return res.status(403).json({ error: "Vous ne pouvez modifier que les pièces de vos propres tâches" });
+  req.part = part;
+  next();
+}
+
+router.patch('/parts/:partId', loadPartForEdit, async (req, res) => {
+  const { name, comment, done } = req.body || {};
+  const next = {
+    name: name ?? req.part.name,
+    comment: comment !== undefined ? (comment || null) : req.part.comment,
+    done: done !== undefined ? Boolean(done) : req.part.done,
+  };
+  const { rows } = await pool.query(
+    `UPDATE task_parts SET name = $1, comment = $2, done = $3 WHERE id = $4
+     RETURNING id, name, comment, done, created_at`,
+    [next.name, next.comment, next.done, req.part.id]
+  );
+  res.json({ part: rows[0] });
+});
+
+router.delete('/parts/:partId', loadPartForEdit, async (req, res) => {
+  await pool.query('DELETE FROM task_parts WHERE id = $1', [req.part.id]);
   res.status(204).end();
 });
 

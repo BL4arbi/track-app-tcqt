@@ -206,7 +206,7 @@ tr:hover td { background: var(--bg-subtle); }
 
 .calendar-grid {
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
+  grid-template-columns: 40px repeat(7, 1fr);
   gap: 1px;
   background: var(--border);
   border: 1px solid var(--border);
@@ -220,6 +220,16 @@ tr:hover td { background: var(--bg-subtle); }
   font-weight: 600;
   color: var(--text-h);
   text-align: center;
+}
+.calendar-week-number {
+  background: var(--bg-subtle);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text);
+  opacity: 0.7;
 }
 .calendar-cell {
   background: var(--bg);

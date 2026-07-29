@@ -47,6 +47,17 @@ CREATE TABLE IF NOT EXISTS task_history (
   changed_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Elements manufactured in-house for a task (e.g. between "Commande reçu"
+-- and "Départ chantier"), with an optional comment per item.
+CREATE TABLE IF NOT EXISTS task_parts (
+  id          SERIAL PRIMARY KEY,
+  task_id     INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  name        TEXT NOT NULL,
+  comment     TEXT,
+  done        BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS documents (
   id                  SERIAL PRIMARY KEY,
   task_id             INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
@@ -67,6 +78,7 @@ CREATE INDEX IF NOT EXISTS idx_tasks_due_date ON tasks(due_date);
 CREATE INDEX IF NOT EXISTS idx_tasks_final_date ON tasks(final_date);
 CREATE INDEX IF NOT EXISTS idx_tasks_parent ON tasks(parent_task_id);
 CREATE INDEX IF NOT EXISTS idx_task_history_task ON task_history(task_id);
+CREATE INDEX IF NOT EXISTS idx_task_parts_task ON task_parts(task_id);
 CREATE INDEX IF NOT EXISTS idx_documents_task ON documents(task_id);
 
 -- keep tasks.updated_at current on every row update
