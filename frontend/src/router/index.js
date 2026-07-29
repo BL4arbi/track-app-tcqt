@@ -1,4 +1,4 @@
-import { createRouter, createWebHistory } from 'vue-router';
+import { createRouter, createWebHashHistory } from 'vue-router';
 import { useAuthStore } from '../store/auth';
 
 import DashboardView from '../views/DashboardView.vue';
@@ -26,7 +26,12 @@ const routes = [
 ];
 
 const router = createRouter({
-  history: createWebHistory(),
+  // Hash-based routing: the packaged Electron app loads dist/index.html
+  // via file://, which can't resolve arbitrary clean-URL paths like
+  // /my-tasks (no server to fall back to index.html for them). Hash
+  // routing is purely client-side and works identically under file://
+  // and http://, so the web-browser deployment isn't affected either.
+  history: createWebHashHistory(),
   routes,
 });
 

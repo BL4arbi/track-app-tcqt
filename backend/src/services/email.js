@@ -32,7 +32,7 @@ export async function sendMail({ to, subject, html }) {
 }
 
 export function verificationEmail(token) {
-  const link = `${process.env.APP_BASE_URL}/verify-email?token=${token}`;
+  const link = `${process.env.APP_BASE_URL}/#/verify-email?token=${token}`;
   return {
     subject: 'Vérifiez votre compte SolidWorks Tracker',
     html: `<p>Bienvenue sur SolidWorks Tracker. Cliquez sur le lien ci-dessous pour vérifier votre compte :</p>
@@ -42,7 +42,7 @@ export function verificationEmail(token) {
 }
 
 export function resetPasswordEmail(token) {
-  const link = `${process.env.APP_BASE_URL}/reset-password?token=${token}`;
+  const link = `${process.env.APP_BASE_URL}/#/reset-password?token=${token}`;
   return {
     subject: 'Réinitialisation de votre mot de passe SolidWorks Tracker',
     html: `<p>Cliquez sur le lien ci-dessous pour réinitialiser votre mot de passe :</p>
