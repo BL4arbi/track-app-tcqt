@@ -10,7 +10,8 @@
 // object works, but every method call (OpenDoc6, RevisionNumber, anything)
 // throws TYPE_E_ELEMENTNOTFOUND. VBScript's classic OLE Automation binder
 // doesn't have that problem; the full open → zoom-to-fit → export pipeline
-// was confirmed working end-to-end against a real uploaded part file.
+// was confirmed working end-to-end against real uploaded part/assembly
+// files, including the STL export used for the in-browser 3D viewer.
 
 import path from 'node:path';
 import os from 'node:os';
@@ -24,6 +25,7 @@ const execFileAsync = promisify(execFile);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const SUPPORTED_EXTENSIONS = new Set(['.sldprt', '.sldasm', '.slddrw']);
+const SOLID_EXTENSIONS = new Set(['.sldprt', '.sldasm']); // can export STL
 
 export async function generateSolidWorksPreview(nativeFilePath) {
   if (process.platform !== 'win32') {
@@ -36,17 +38,30 @@ export async function generateSolidWorksPreview(nativeFilePath) {
   }
 
   const scriptPath = path.join(__dirname, 'solidworks-preview.vbs');
-  const tmpPng = path.join(os.tmpdir(), `sw-preview-${randomUUID()}.png`);
+  const id = randomUUID();
+  const tmpPng = path.join(os.tmpdir(), `sw-preview-${id}.png`);
+  const wantsStl = SOLID_EXTENSIONS.has(ext);
+  const tmpStl = wantsStl ? path.join(os.tmpdir(), `sw-preview-${id}.stl`) : null;
 
   try {
-    await execFileAsync(
-      'cscript.exe',
-      ['//nologo', scriptPath, nativeFilePath, tmpPng],
-      { timeout: 120_000 }
-    );
+    const args = ['//nologo', scriptPath, nativeFilePath, tmpPng];
+    if (tmpStl) args.push(tmpStl);
 
-    const buffer = await readFile(tmpPng);
-    return { success: true, base64: buffer.toString('base64') };
+    await execFileAsync('cscript.exe', args, { timeout: 120_000 });
+
+    const pngBuffer = await readFile(tmpPng);
+    const result = { success: true, base64: pngBuffer.toString('base64') };
+
+    if (tmpStl) {
+      try {
+        const stlBuffer = await readFile(tmpStl);
+        result.modelBase64 = stlBuffer.toString('base64');
+      } catch {
+        // STL export is best-effort — the PNG preview still succeeded.
+      }
+    }
+
+    return result;
   } catch (e) {
     // execFile errors include stderr, which carries the VBScript/COM
     // exception message — surface that, it's the actionable part.
@@ -57,6 +72,13 @@ export async function generateSolidWorksPreview(nativeFilePath) {
       await unlink(tmpPng);
     } catch {
       // temp file may not have been created if export failed
+    }
+    if (tmpStl) {
+      try {
+        await unlink(tmpStl);
+      } catch {
+        // may not exist if STL export failed/was skipped
+      }
     }
   }
 }

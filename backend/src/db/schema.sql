@@ -51,8 +51,11 @@ CREATE TABLE IF NOT EXISTS documents (
   file_type           TEXT NOT NULL,
   storage_path        TEXT NOT NULL,
   preview_image_path  TEXT,
+  model_path          TEXT,
   uploaded_at         TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS model_path TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_tasks_assigned_user ON tasks(assigned_user_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);

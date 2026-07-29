@@ -4,6 +4,7 @@ import { useRoute } from 'vue-router';
 import { api } from '../api/client';
 import { useAuthStore } from '../store/auth';
 import { WORKFLOW_STEPS } from '../utils/workflowSteps';
+import ModelViewer from '../components/ModelViewer.vue';
 
 const route = useRoute();
 const auth = useAuthStore();
@@ -15,6 +16,7 @@ const error = ref('');
 
 const nativeFile = ref(null);
 const previewFile = ref(null);
+const previewModel = ref(null);
 const uploadError = ref('');
 const uploading = ref(false);
 
@@ -26,6 +28,11 @@ const addingPreviewFor = ref(null);
 const previewOnlyFile = ref(null);
 const previewOnlyError = ref('');
 const previewOnlySaving = ref(false);
+
+const deletingId = ref(null);
+const deleteError = ref('');
+
+const viewingModelFor = ref(null);
 
 const editing = ref(false);
 const editDraft = reactive({});
@@ -52,6 +59,11 @@ const canEdit = computed(() => task.value && (auth.isManager || task.value.assig
 function previewUrl(doc) {
   if (!doc.preview_image_path) return null;
   return `${api.defaults.baseURL}/uploads/${doc.preview_image_path}`;
+}
+
+function modelUrl(doc) {
+  if (!doc.model_path) return null;
+  return `${api.defaults.baseURL}/uploads/${doc.model_path}`;
 }
 
 function downloadUrl(doc) {
@@ -107,6 +119,7 @@ async function upload() {
   const form = new FormData();
   form.append('file', nativeFile.value);
   if (previewFile.value) form.append('previewImage', previewFile.value);
+  if (previewModel.value) form.append('previewModel', previewModel.value);
 
   uploading.value = true;
   try {
@@ -115,12 +128,20 @@ async function upload() {
     });
     nativeFile.value = null;
     previewFile.value = null;
+    previewModel.value = null;
     await load();
   } catch (e) {
     uploadError.value = e.response?.data?.error || "Échec de l'envoi";
   } finally {
     uploading.value = false;
   }
+}
+
+function base64ToBytes(base64) {
+  const byteChars = atob(base64);
+  const bytes = new Uint8Array(byteChars.length);
+  for (let i = 0; i < byteChars.length; i++) bytes[i] = byteChars.charCodeAt(i);
+  return bytes;
 }
 
 async function generatePreviewFromSolidWorks() {
@@ -141,10 +162,10 @@ async function generatePreviewFromSolidWorks() {
       generatePreviewError.value = result.error || 'Échec de la génération automatique';
       return;
     }
-    const byteChars = atob(result.base64);
-    const bytes = new Uint8Array(byteChars.length);
-    for (let i = 0; i < byteChars.length; i++) bytes[i] = byteChars.charCodeAt(i);
-    previewFile.value = new File([bytes], 'apercu-solidworks.png', { type: 'image/png' });
+    previewFile.value = new File([base64ToBytes(result.base64)], 'apercu-solidworks.png', { type: 'image/png' });
+    if (result.modelBase64) {
+      previewModel.value = new File([base64ToBytes(result.modelBase64)], 'modele-solidworks.stl', { type: 'model/stl' });
+    }
   } catch (e) {
     generatePreviewError.value = e.message || 'Échec de la génération automatique';
   } finally {
@@ -178,6 +199,24 @@ async function saveAddPreview(docId) {
   } finally {
     previewOnlySaving.value = false;
   }
+}
+
+async function deleteDocument(doc) {
+  if (!confirm(`Supprimer "${doc.original_filename}" ? Cette action est irréversible.`)) return;
+  deletingId.value = doc.id;
+  deleteError.value = '';
+  try {
+    await api.delete(`/api/documents/${doc.id}`);
+    await load();
+  } catch (e) {
+    deleteError.value = e.response?.data?.error || 'Échec de la suppression';
+  } finally {
+    deletingId.value = null;
+  }
+}
+
+function toggleModel(docId) {
+  viewingModelFor.value = viewingModelFor.value === docId ? null : docId;
 }
 
 onMounted(load);
@@ -261,27 +300,46 @@ onMounted(load);
 
       <div class="card">
         <h2>Documents</h2>
+        <p v-if="deleteError" class="error-text">{{ deleteError }}</p>
         <div v-if="!documents.length" class="muted">Aucun document envoyé pour l'instant.</div>
-        <div v-for="doc in documents" :key="doc.id" class="doc-row">
-          <img v-if="previewUrl(doc)" :src="previewUrl(doc)" class="preview-thumb" :alt="doc.original_filename" />
-          <div v-else class="preview-thumb" style="display:flex;align-items:center;justify-content:center;font-size:11px" >aucun aperçu</div>
-          <div style="flex:1">
-            <div>{{ doc.original_filename }}</div>
-            <div class="muted">{{ doc.file_type.toUpperCase() }} · envoyé par {{ doc.uploaded_by }} · {{ formatDate(doc.uploaded_at) }}</div>
-            <template v-if="!doc.preview_image_path && canEdit">
-              <div v-if="addingPreviewFor !== doc.id">
-                <button type="button" class="link-button" @click="startAddPreview(doc.id)">+ ajouter un aperçu</button>
-              </div>
-              <div v-else style="display:flex; gap:8px; align-items:center; margin-top:6px">
-                <input type="file" @change="previewOnlyFile = $event.target.files[0]" />
-                <button type="button" :disabled="previewOnlySaving" @click="saveAddPreview(doc.id)">{{ previewOnlySaving ? 'Envoi…' : 'Envoyer' }}</button>
-                <button type="button" class="secondary" @click="addingPreviewFor = null">Annuler</button>
-              </div>
-              <p v-if="addingPreviewFor === doc.id && previewOnlyError" class="error-text">{{ previewOnlyError }}</p>
-            </template>
+        <template v-for="doc in documents" :key="doc.id">
+          <div class="doc-row">
+            <img v-if="previewUrl(doc)" :src="previewUrl(doc)" class="preview-thumb" :alt="doc.original_filename" />
+            <div v-else class="preview-thumb" style="display:flex;align-items:center;justify-content:center;font-size:11px" >aucun aperçu</div>
+            <div style="flex:1">
+              <div>{{ doc.original_filename }}</div>
+              <div class="muted">{{ doc.file_type.toUpperCase() }} · envoyé par {{ doc.uploaded_by }} · {{ formatDate(doc.uploaded_at) }}</div>
+              <template v-if="!doc.preview_image_path && canEdit">
+                <div v-if="addingPreviewFor !== doc.id">
+                  <button type="button" class="link-button" @click="startAddPreview(doc.id)">+ ajouter un aperçu</button>
+                </div>
+                <div v-else style="display:flex; gap:8px; align-items:center; margin-top:6px">
+                  <input type="file" @change="previewOnlyFile = $event.target.files[0]" />
+                  <button type="button" :disabled="previewOnlySaving" @click="saveAddPreview(doc.id)">{{ previewOnlySaving ? 'Envoi…' : 'Envoyer' }}</button>
+                  <button type="button" class="secondary" @click="addingPreviewFor = null">Annuler</button>
+                </div>
+                <p v-if="addingPreviewFor === doc.id && previewOnlyError" class="error-text">{{ previewOnlyError }}</p>
+              </template>
+            </div>
+            <div style="display:flex; gap:12px; align-items:center; white-space:nowrap">
+              <button v-if="doc.model_path" type="button" class="link-button" @click="toggleModel(doc.id)">
+                {{ viewingModelFor === doc.id ? 'Fermer la vue 3D' : 'Voir en 3D' }}
+              </button>
+              <a :href="downloadUrl(doc)">Télécharger</a>
+              <button
+                v-if="canEdit"
+                type="button"
+                class="link-button"
+                style="color:var(--danger)"
+                :disabled="deletingId === doc.id"
+                @click="deleteDocument(doc)"
+              >
+                {{ deletingId === doc.id ? 'Suppression…' : 'Supprimer' }}
+              </button>
+            </div>
           </div>
-          <a :href="downloadUrl(doc)">Télécharger</a>
-        </div>
+          <ModelViewer v-if="viewingModelFor === doc.id" :model-url="modelUrl(doc)" style="margin-bottom:16px" />
+        </template>
 
         <form @submit.prevent="upload" style="margin-top:16px">
           <div class="form-row">
@@ -303,7 +361,9 @@ onMounted(load);
                 {{ generatingPreview ? 'Génération…' : 'Générer via SolidWorks (bêta)' }}
               </button>
               <p v-if="generatePreviewError" class="error-text">{{ generatePreviewError }}</p>
-              <p v-if="previewFile?.name === 'apercu-solidworks.png'" class="success-text">Aperçu généré automatiquement ✓</p>
+              <p v-if="previewFile?.name === 'apercu-solidworks.png'" class="success-text">
+                Aperçu généré automatiquement ✓ {{ previewModel ? '(+ modèle 3D)' : '' }}
+              </p>
             </div>
           </div>
           <p v-if="uploadError" class="error-text">{{ uploadError }}</p>
