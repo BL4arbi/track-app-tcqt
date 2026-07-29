@@ -9,6 +9,8 @@ const loading = ref(true);
 const error = ref('');
 const editingId = ref(null);
 const editDraft = reactive({});
+const deletingId = ref(null);
+const deleteError = ref('');
 
 const newTask = reactive({ client_id: '', title: '', current_step: '', due_date: '' });
 const creating = ref(false);
@@ -70,6 +72,20 @@ async function saveEdit(id) {
   await load();
 }
 
+async function deleteTask(t) {
+  if (!confirm(`Supprimer la tâche "${t.title}" ? Cette action est irréversible et supprime aussi ses documents.`)) return;
+  deletingId.value = t.id;
+  deleteError.value = '';
+  try {
+    await api.delete(`/api/tasks/${t.id}`);
+    await load();
+  } catch (e) {
+    deleteError.value = e.response?.data?.error || 'Échec de la suppression';
+  } finally {
+    deletingId.value = null;
+  }
+}
+
 onMounted(load);
 </script>
 
@@ -111,6 +127,7 @@ onMounted(load);
     <p v-if="loading" class="muted">Chargement…</p>
     <p v-else-if="error" class="error-text">{{ error }}</p>
     <p v-else-if="!tasks.length" class="muted">Vous n'avez pas encore de tâche.</p>
+    <p v-if="deleteError" class="error-text">{{ deleteError }}</p>
 
     <table v-else>
       <thead>
@@ -133,7 +150,18 @@ onMounted(load);
             <td>{{ t.next_step || '—' }}</td>
             <td>{{ t.due_date || '—' }}</td>
             <td><span class="badge" :class="t.status">{{ STATUS_LABELS[t.status] }}</span></td>
-            <td><button class="secondary" @click="startEdit(t)">Modifier</button></td>
+            <td style="white-space:nowrap">
+              <button class="secondary" @click="startEdit(t)">Modifier</button>
+              <button
+                type="button"
+                class="link-button"
+                style="color:var(--danger); margin-left:8px"
+                :disabled="deletingId === t.id"
+                @click="deleteTask(t)"
+              >
+                {{ deletingId === t.id ? 'Suppression…' : 'Supprimer' }}
+              </button>
+            </td>
           </tr>
           <tr v-else>
             <td>{{ t.client_name }}</td>

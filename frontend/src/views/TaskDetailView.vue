@@ -1,12 +1,13 @@
 <script setup>
 import { ref, computed, reactive, onMounted } from 'vue';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import { api } from '../api/client';
 import { useAuthStore } from '../store/auth';
 import { WORKFLOW_STEPS } from '../utils/workflowSteps';
 import ModelViewer from '../components/ModelViewer.vue';
 
 const route = useRoute();
+const router = useRouter();
 const auth = useAuthStore();
 const task = ref(null);
 const history = ref([]);
@@ -38,6 +39,9 @@ const editing = ref(false);
 const editDraft = reactive({});
 const saving = ref(false);
 const saveError = ref('');
+
+const deletingTask = ref(false);
+const deleteTaskError = ref('');
 
 const STATUS_LABELS = { active: 'Actif', paused: 'En pause', done: 'Terminé' };
 
@@ -144,6 +148,19 @@ function base64ToBytes(base64) {
   return bytes;
 }
 
+async function deleteTask() {
+  if (!confirm(`Supprimer la tâche "${task.value.title}" ? Cette action est irréversible et supprime aussi ses documents.`)) return;
+  deletingTask.value = true;
+  deleteTaskError.value = '';
+  try {
+    await api.delete(`/api/tasks/${route.params.id}`);
+    router.push({ name: 'my-tasks' });
+  } catch (e) {
+    deleteTaskError.value = e.response?.data?.error || 'Échec de la suppression';
+    deletingTask.value = false;
+  }
+}
+
 async function generatePreviewFromSolidWorks() {
   generatePreviewError.value = '';
   if (!nativeFile.value) {
@@ -233,8 +250,19 @@ onMounted(load);
         <div style="display:flex; gap:10px; align-items:center">
           <span class="badge" :class="task.status">{{ statusLabel(task.status) }}</span>
           <button v-if="canEdit && !editing" class="secondary" @click="startEdit">Modifier</button>
+          <button
+            v-if="canEdit && !editing"
+            type="button"
+            class="secondary"
+            style="color:var(--danger); border-color:var(--danger)"
+            :disabled="deletingTask"
+            @click="deleteTask"
+          >
+            {{ deletingTask ? 'Suppression…' : 'Supprimer la tâche' }}
+          </button>
         </div>
       </div>
+      <p v-if="deleteTaskError" class="error-text">{{ deleteTaskError }}</p>
 
       <div class="card">
         <h2>Chronologie</h2>

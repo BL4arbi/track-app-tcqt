@@ -1,10 +1,15 @@
 import { Router } from 'express';
+import path from 'node:path';
+import { existsSync } from 'node:fs';
+import { unlink } from 'node:fs/promises';
 import { pool } from '../db/pool.js';
 import { requireAuth } from '../middleware/auth.js';
 import { WORKFLOW_STEPS, nextWorkflowStep } from '../utils/workflowSteps.js';
 
 const router = Router();
 router.use(requireAuth);
+
+const UPLOAD_DIR = process.env.UPLOAD_DIR || './uploads';
 
 const TASK_SELECT = `
   SELECT t.id, t.title, t.current_step, t.next_step, t.due_date, t.status,
@@ -147,6 +152,42 @@ router.patch('/:id', async (req, res) => {
 
   const { rows: full } = await pool.query(`${TASK_SELECT} WHERE t.id = $1`, [existing.id]);
   res.json({ task: full[0] });
+});
+
+// Any user can delete their own task (e.g. once finished or superseded by
+// another step) — not manager-only. Managers can delete any task.
+router.delete('/:id', async (req, res) => {
+  const { rows: existingRows } = await pool.query('SELECT * FROM tasks WHERE id = $1', [req.params.id]);
+  const existing = existingRows[0];
+  if (!existing) return res.status(404).json({ error: "Tâche introuvable" });
+
+  const canEdit = req.user.role === 'manager' || existing.assigned_user_id === req.user.id;
+  if (!canEdit) return res.status(403).json({ error: "Vous ne pouvez supprimer que vos propres tâches" });
+
+  const { rows: docs } = await pool.query(
+    'SELECT storage_path, preview_image_path, model_path FROM documents WHERE task_id = $1',
+    [existing.id]
+  );
+
+  // task_history and documents rows cascade-delete via FK ON DELETE CASCADE
+  // — this only needs to clean up the actual files on disk.
+  await pool.query('DELETE FROM tasks WHERE id = $1', [existing.id]);
+
+  const filePaths = docs.flatMap((d) => [d.storage_path, d.preview_image_path, d.model_path]).filter(Boolean);
+  await Promise.all(
+    filePaths.map(async (rel) => {
+      const abs = path.resolve(UPLOAD_DIR, rel);
+      if (existsSync(abs)) {
+        try {
+          await unlink(abs);
+        } catch {
+          // best-effort cleanup — the DB rows are already gone either way
+        }
+      }
+    })
+  );
+
+  res.status(204).end();
 });
 
 export default router;
