@@ -7,6 +7,8 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 const props = defineProps({ modelUrl: { type: String, required: true } });
 
 const container = ref(null);
+const loadingModel = ref(true);
+const loadError = ref('');
 let renderer, scene, camera, controls, mesh, animationId, resizeObserver;
 
 function clearMesh() {
@@ -36,13 +38,24 @@ function frameCameraToObject(object) {
 
 function loadModel(url) {
   clearMesh();
-  new STLLoader().load(url, (geometry) => {
-    geometry.computeVertexNormals();
-    const material = new THREE.MeshStandardMaterial({ color: 0x8f9bb3, metalness: 0.15, roughness: 0.6 });
-    mesh = new THREE.Mesh(geometry, material);
-    scene.add(mesh);
-    frameCameraToObject(mesh);
-  });
+  loadingModel.value = true;
+  loadError.value = '';
+  new STLLoader().load(
+    url,
+    (geometry) => {
+      geometry.computeVertexNormals();
+      const material = new THREE.MeshStandardMaterial({ color: 0x8f9bb3, metalness: 0.15, roughness: 0.6 });
+      mesh = new THREE.Mesh(geometry, material);
+      scene.add(mesh);
+      frameCameraToObject(mesh);
+      loadingModel.value = false;
+    },
+    undefined,
+    (err) => {
+      loadingModel.value = false;
+      loadError.value = `Échec du chargement du modèle 3D : ${err?.message || err}`;
+    }
+  );
 }
 
 function resize() {
@@ -99,18 +112,32 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div ref="container" class="model-viewer"></div>
+  <div class="model-viewer-wrap">
+    <div ref="container" class="model-viewer"></div>
+    <p v-if="loadingModel" class="model-viewer-status muted">Chargement du modèle 3D…</p>
+    <p v-if="loadError" class="model-viewer-status error-text">{{ loadError }}</p>
+  </div>
 </template>
 
 <style scoped>
+.model-viewer-wrap { position: relative; width: 100%; height: 100%; }
 .model-viewer {
   width: 100%;
-  height: 420px;
+  height: 100%;
   border-radius: 8px;
   overflow: hidden;
   border: 1px solid var(--border);
 }
 .model-viewer :deep(canvas) {
   display: block;
+}
+.model-viewer-status {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  background: var(--bg);
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
 }
 </style>

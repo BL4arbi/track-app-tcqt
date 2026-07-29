@@ -11,12 +11,16 @@ const TASK_SELECT = `
          t.created_at, t.updated_at,
          t.client_id, c.name AS client_name,
          t.assigned_user_id, u.full_name AS assigned_user_name,
-         (SELECT d.preview_image_path FROM documents d
-          WHERE d.task_id = t.id AND d.preview_image_path IS NOT NULL
-          ORDER BY d.uploaded_at DESC LIMIT 1) AS preview_image_path
+         latest_doc.preview_image_path, latest_doc.model_path
   FROM tasks t
   JOIN clients c ON c.id = t.client_id
   JOIN users u ON u.id = t.assigned_user_id
+  LEFT JOIN LATERAL (
+    SELECT d.preview_image_path, d.model_path
+    FROM documents d
+    WHERE d.task_id = t.id AND d.preview_image_path IS NOT NULL
+    ORDER BY d.uploaded_at DESC LIMIT 1
+  ) latest_doc ON true
 `;
 
 // Dashboard: every active task across the team.
@@ -59,7 +63,7 @@ router.get('/:id', async (req, res) => {
     ),
     pool.query(
       `SELECT d.id, d.original_filename, d.file_type, d.storage_path, d.preview_image_path,
-              d.uploaded_at, u.full_name AS uploaded_by
+              d.model_path, d.uploaded_at, u.full_name AS uploaded_by
        FROM documents d JOIN users u ON u.id = d.uploaded_by
        WHERE d.task_id = $1 ORDER BY d.uploaded_at DESC`,
       [task.id]

@@ -338,7 +338,7 @@ onMounted(load);
               </button>
             </div>
           </div>
-          <ModelViewer v-if="viewingModelFor === doc.id" :model-url="modelUrl(doc)" style="margin-bottom:16px" />
+          <ModelViewer v-if="viewingModelFor === doc.id" :model-url="modelUrl(doc)" style="height:420px; margin-bottom:16px" />
         </template>
 
         <form @submit.prevent="upload" style="margin-top:16px">
