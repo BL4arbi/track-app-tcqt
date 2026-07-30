@@ -56,15 +56,24 @@ CREATE TABLE IF NOT EXISTS task_history (
 -- Elements manufactured in-house for a task (e.g. between "Commande reçu"
 -- and "Départ chantier"), with an optional comment per item. status tracks
 -- the procurement/manufacturing stage of the raw material/part itself —
--- 'fabrique' (manufactured) is the final state.
+-- 'fabrique' (manufactured) is the final state. machine is a free-text
+-- grouping label (e.g. "MACHINE ORBITALE 8") — pieces are organized by
+-- machine within a task, matching how the team's own spreadsheet works.
 CREATE TABLE IF NOT EXISTS task_parts (
-  id          SERIAL PRIMARY KEY,
-  task_id     INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
-  name        TEXT NOT NULL,
-  comment     TEXT,
-  done        BOOLEAN NOT NULL DEFAULT FALSE,
-  status      TEXT NOT NULL DEFAULT 'a_commander' CHECK (status IN ('a_commander', 'commande', 'en_fabrication', 'fabrique')),
-  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+  id            SERIAL PRIMARY KEY,
+  task_id       INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  machine       TEXT,
+  name          TEXT NOT NULL,
+  comment       TEXT,
+  quantity      INTEGER NOT NULL DEFAULT 1,
+  brut          TEXT, -- raw stock needed, e.g. "Plat étiré 80x30"
+  done          BOOLEAN NOT NULL DEFAULT FALSE,
+  status        TEXT NOT NULL DEFAULT 'a_commander' CHECK (status IN ('a_commander', 'commande', 'en_fabrication', 'fabrique')),
+  cad_path      TEXT,
+  cad_filename  TEXT,
+  plan_path     TEXT,
+  plan_filename TEXT,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 ALTER TABLE task_parts ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'a_commander';
@@ -75,6 +84,47 @@ ALTER TABLE task_parts ADD CONSTRAINT task_parts_status_check CHECK (status IN (
 -- One-time backfill for rows created before `status` existed: preserve
 -- their prior "done" flag as the equivalent final status.
 UPDATE task_parts SET status = 'fabrique' WHERE done = true AND status = 'a_commander';
+
+ALTER TABLE task_parts ADD COLUMN IF NOT EXISTS machine TEXT;
+ALTER TABLE task_parts ADD COLUMN IF NOT EXISTS quantity INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE task_parts ADD COLUMN IF NOT EXISTS brut TEXT;
+ALTER TABLE task_parts ADD COLUMN IF NOT EXISTS cad_path TEXT;
+ALTER TABLE task_parts ADD COLUMN IF NOT EXISTS cad_filename TEXT;
+ALTER TABLE task_parts ADD COLUMN IF NOT EXISTS plan_path TEXT;
+ALTER TABLE task_parts ADD COLUMN IF NOT EXISTS plan_filename TEXT;
+
+-- Reusable supplier directory — a purchase can pick one from here (link
+-- optional, e.g. their catalogue/product page) or, if it doesn't exist yet,
+-- create it inline from the purchase form (name is unique so re-typing an
+-- existing supplier's name just reuses that row instead of duplicating it).
+CREATE TABLE IF NOT EXISTS suppliers (
+  id          SERIAL PRIMARY KEY,
+  name        TEXT NOT NULL UNIQUE,
+  link        TEXT,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Things to buy for a task (hardware, consumables, raw stock) — a separate
+-- list from task_parts, not tied to one specific piece, though it can
+-- optionally be tagged with the same free-text "machine" grouping.
+-- supplier_name is always stored directly (denormalized) so a purchase
+-- still shows its supplier even if picked as free text rather than from
+-- the suppliers table; supplier_id is set only when linked to a directory
+-- entry (used to show its link, and for the global duplicate-detection
+-- view to match purchases across tasks by supplier + ref).
+CREATE TABLE IF NOT EXISTS task_purchases (
+  id              SERIAL PRIMARY KEY,
+  task_id         INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  machine         TEXT,
+  description     TEXT NOT NULL,
+  quantity        INTEGER NOT NULL DEFAULT 1,
+  ref             TEXT,
+  supplier_id     INTEGER REFERENCES suppliers(id) ON DELETE SET NULL,
+  supplier_name   TEXT,
+  status          TEXT NOT NULL DEFAULT 'a_commander' CHECK (status IN ('a_commander', 'commande', 'en_cours_livraison', 'recu')),
+  created_by      INTEGER NOT NULL REFERENCES users(id),
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 
 CREATE TABLE IF NOT EXISTS documents (
   id                  SERIAL PRIMARY KEY,
@@ -99,6 +149,10 @@ CREATE INDEX IF NOT EXISTS idx_tasks_parent ON tasks(parent_task_id);
 CREATE INDEX IF NOT EXISTS idx_task_history_task ON task_history(task_id);
 CREATE INDEX IF NOT EXISTS idx_task_parts_task ON task_parts(task_id);
 CREATE INDEX IF NOT EXISTS idx_documents_task ON documents(task_id);
+CREATE INDEX IF NOT EXISTS idx_task_purchases_task ON task_purchases(task_id);
+CREATE INDEX IF NOT EXISTS idx_task_purchases_status ON task_purchases(status);
+CREATE INDEX IF NOT EXISTS idx_task_purchases_ref ON task_purchases(ref);
+CREATE INDEX IF NOT EXISTS idx_suppliers_name ON suppliers(name);
 
 -- keep tasks.updated_at current on every row update
 CREATE OR REPLACE FUNCTION set_updated_at()

@@ -197,4 +197,102 @@ router.delete('/documents/:id', loadDocumentForEdit, async (req, res) => {
   res.status(204).end();
 });
 
+// CAD file / PDF plan attached directly to a manufactured-parts checklist
+// entry (task_parts), not the general task documents list — each part gets
+// its own single CAD slot and single plan slot, replaced wholesale on
+// re-upload (the old file is cleaned up from disk afterward).
+async function loadPartForFileEdit(req, res, next) {
+  const { rows } = await pool.query(
+    `SELECT p.*, t.assigned_user_id
+     FROM task_parts p JOIN tasks t ON t.id = p.task_id
+     WHERE p.id = $1`,
+    [req.params.partId]
+  );
+  const part = rows[0];
+  if (!part) return res.status(404).json({ error: "Pièce introuvable" });
+  const canEdit = req.user.role === 'manager' || part.assigned_user_id === req.user.id;
+  if (!canEdit) return res.status(403).json({ error: "Vous ne pouvez modifier que les pièces de vos propres tâches" });
+  req.part = part;
+  next();
+}
+
+function ensurePartDirs(req, _res, next) {
+  mkdirSync(path.join(UPLOAD_DIR, 'tasks', String(req.part.task_id), 'parts'), { recursive: true });
+  next();
+}
+
+const partFileStorage = multer.diskStorage({
+  destination: (req, _file, cb) => {
+    cb(null, path.join(UPLOAD_DIR, 'tasks', String(req.part.task_id), 'parts'));
+  },
+  filename: (_req, file, cb) => {
+    cb(null, `${randomUUID()}${path.extname(fixFilenameEncoding(file.originalname)).toLowerCase()}`);
+  },
+});
+const uploadPartFile = multer({ storage: partFileStorage, limits: { fileSize: 200 * 1024 * 1024 } });
+
+const PART_SELECT_COLUMNS = 'id, machine, name, comment, quantity, brut, status, cad_filename, plan_filename, created_at';
+
+async function unlinkIfExists(relPath) {
+  if (!relPath) return;
+  const abs = path.resolve(UPLOAD_DIR, relPath);
+  if (existsSync(abs)) {
+    try {
+      await unlink(abs);
+    } catch {
+      // best-effort cleanup
+    }
+  }
+}
+
+router.patch(
+  '/tasks/parts/:partId/cad',
+  loadPartForFileEdit,
+  ensurePartDirs,
+  uploadPartFile.single('file'),
+  async (req, res) => {
+    if (!req.file) return res.status(400).json({ error: 'Le fichier CAO est obligatoire' });
+    const toRelative = (f) => path.relative(UPLOAD_DIR, f.path).split(path.sep).join('/');
+    const fixedName = fixFilenameEncoding(req.file.originalname);
+    const { rows } = await pool.query(
+      `UPDATE task_parts SET cad_path = $1, cad_filename = $2 WHERE id = $3 RETURNING ${PART_SELECT_COLUMNS}`,
+      [toRelative(req.file), fixedName, req.part.id]
+    );
+    await unlinkIfExists(req.part.cad_path);
+    res.json({ part: rows[0] });
+  }
+);
+
+router.patch(
+  '/tasks/parts/:partId/plan',
+  loadPartForFileEdit,
+  ensurePartDirs,
+  uploadPartFile.single('file'),
+  async (req, res) => {
+    if (!req.file) return res.status(400).json({ error: 'Le plan est obligatoire' });
+    const toRelative = (f) => path.relative(UPLOAD_DIR, f.path).split(path.sep).join('/');
+    const fixedName = fixFilenameEncoding(req.file.originalname);
+    const { rows } = await pool.query(
+      `UPDATE task_parts SET plan_path = $1, plan_filename = $2 WHERE id = $3 RETURNING ${PART_SELECT_COLUMNS}`,
+      [toRelative(req.file), fixedName, req.part.id]
+    );
+    await unlinkIfExists(req.part.plan_path);
+    res.json({ part: rows[0] });
+  }
+);
+
+router.get('/tasks/parts/:partId/cad/download', async (req, res) => {
+  const { rows } = await pool.query('SELECT cad_path, cad_filename FROM task_parts WHERE id = $1', [req.params.partId]);
+  const part = rows[0];
+  if (!part?.cad_path) return res.status(404).json({ error: 'Fichier CAO introuvable' });
+  res.download(path.resolve(UPLOAD_DIR, part.cad_path), part.cad_filename);
+});
+
+router.get('/tasks/parts/:partId/plan/download', async (req, res) => {
+  const { rows } = await pool.query('SELECT plan_path, plan_filename FROM task_parts WHERE id = $1', [req.params.partId]);
+  const part = rows[0];
+  if (!part?.plan_path) return res.status(404).json({ error: 'Plan introuvable' });
+  res.download(path.resolve(UPLOAD_DIR, part.plan_path), part.plan_filename);
+});
+
 export default router;

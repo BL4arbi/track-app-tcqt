@@ -32,6 +32,7 @@ async function logout() {
         <RouterLink to="/">Tableau de bord</RouterLink>
         <RouterLink to="/my-tasks">Mes tâches</RouterLink>
         <RouterLink to="/calendar">Calendrier</RouterLink>
+        <RouterLink to="/purchases">Commandes</RouterLink>
         <RouterLink v-if="auth.isManager" to="/admin">Admin</RouterLink>
       </nav>
       <div class="topbar-user">

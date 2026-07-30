@@ -162,7 +162,19 @@ tr:hover td { background: var(--bg-subtle); }
 .part-status-select.a_commander { background: rgba(150, 150, 150, 0.18); color: var(--text); }
 .part-status-select.commande { background: rgba(200, 150, 0, 0.15); color: #a67c00; }
 .part-status-select.en_fabrication { background: var(--accent-bg); color: var(--accent); }
-.part-status-select.fabrique { background: rgba(26, 127, 75, 0.15); color: var(--success); }
+.part-status-select.fabrique,
+.part-status-select.recu { background: rgba(26, 127, 75, 0.15); color: var(--success); }
+.part-status-select.en_cours_livraison { background: rgba(66, 133, 244, 0.15); color: #2a63c9; }
+
+.machine-group-header {
+  font-weight: 700;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  background: var(--bg-subtle);
+  color: var(--text-h);
+  border-top: 1px solid var(--border);
+}
 
 .reminder-card { border-color: var(--accent); }
 .reminder-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; font-size: 14px; }

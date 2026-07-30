@@ -81,12 +81,25 @@ router.get('/:id', async (req, res) => {
       [task.id]
     ),
     pool.query(
-      `SELECT id, name, comment, status, created_at FROM task_parts WHERE task_id = $1 ORDER BY created_at`,
+      `SELECT id, machine, name, comment, quantity, brut, status,
+              cad_filename, plan_filename, created_at
+       FROM task_parts WHERE task_id = $1 ORDER BY machine NULLS LAST, created_at`,
       [task.id]
     ),
   ]);
 
-  res.json({ task, history, documents, subtasks, parts });
+  const { rows: purchases } = await pool.query(
+    `SELECT p.id, p.machine, p.description, p.quantity, p.ref, p.status,
+            p.supplier_id, COALESCE(s.name, p.supplier_name) AS supplier_name, s.link AS supplier_link,
+            p.created_at, u.full_name AS created_by
+     FROM task_purchases p
+     JOIN users u ON u.id = p.created_by
+     LEFT JOIN suppliers s ON s.id = p.supplier_id
+     WHERE p.task_id = $1 ORDER BY p.created_at`,
+    [task.id]
+  );
+
+  res.json({ task, history, documents, subtasks, parts, purchases });
 });
 
 router.post('/', async (req, res) => {
@@ -234,16 +247,21 @@ router.post('/:id/parts', async (req, res) => {
   const canEdit = req.user.role === 'manager' || task.assigned_user_id === req.user.id;
   if (!canEdit) return res.status(403).json({ error: "Vous ne pouvez modifier que vos propres tâches" });
 
-  const { name, comment, status } = req.body || {};
+  const { machine, name, comment, quantity, brut, status } = req.body || {};
   if (!name) return res.status(400).json({ error: "Le nom de la pièce est obligatoire" });
   if (status !== undefined && !PART_STATUSES.includes(status)) {
     return res.status(400).json({ error: 'Statut de pièce invalide' });
   }
+  const qty = quantity !== undefined && quantity !== '' ? Number(quantity) : 1;
+  if (!Number.isInteger(qty) || qty < 1) {
+    return res.status(400).json({ error: 'La quantité doit être un entier positif' });
+  }
 
   const { rows } = await pool.query(
-    `INSERT INTO task_parts (task_id, name, comment, status) VALUES ($1, $2, $3, $4)
-     RETURNING id, name, comment, status, created_at`,
-    [task.id, name, comment || null, status || 'a_commander']
+    `INSERT INTO task_parts (task_id, machine, name, comment, quantity, brut, status)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
+     RETURNING id, machine, name, comment, quantity, brut, status, cad_filename, plan_filename, created_at`,
+    [task.id, machine || null, name, comment || null, qty, brut || null, status || 'a_commander']
   );
   res.status(201).json({ part: rows[0] });
 });
@@ -264,25 +282,137 @@ async function loadPartForEdit(req, res, next) {
 }
 
 router.patch('/parts/:partId', loadPartForEdit, async (req, res) => {
-  const { name, comment, status } = req.body || {};
+  const { machine, name, comment, quantity, brut, status } = req.body || {};
   if (status !== undefined && !PART_STATUSES.includes(status)) {
     return res.status(400).json({ error: 'Statut de pièce invalide' });
   }
+  let qty = req.part.quantity;
+  if (quantity !== undefined && quantity !== '') {
+    qty = Number(quantity);
+    if (!Number.isInteger(qty) || qty < 1) {
+      return res.status(400).json({ error: 'La quantité doit être un entier positif' });
+    }
+  }
   const next = {
+    machine: machine !== undefined ? (machine || null) : req.part.machine,
     name: name ?? req.part.name,
     comment: comment !== undefined ? (comment || null) : req.part.comment,
+    quantity: qty,
+    brut: brut !== undefined ? (brut || null) : req.part.brut,
     status: status ?? req.part.status,
   };
   const { rows } = await pool.query(
-    `UPDATE task_parts SET name = $1, comment = $2, status = $3 WHERE id = $4
-     RETURNING id, name, comment, status, created_at`,
-    [next.name, next.comment, next.status, req.part.id]
+    `UPDATE task_parts SET machine = $1, name = $2, comment = $3, quantity = $4, brut = $5, status = $6 WHERE id = $7
+     RETURNING id, machine, name, comment, quantity, brut, status, cad_filename, plan_filename, created_at`,
+    [next.machine, next.name, next.comment, next.quantity, next.brut, next.status, req.part.id]
   );
   res.json({ part: rows[0] });
 });
 
 router.delete('/parts/:partId', loadPartForEdit, async (req, res) => {
   await pool.query('DELETE FROM task_parts WHERE id = $1', [req.part.id]);
+  await Promise.all(
+    [req.part.cad_path, req.part.plan_path].filter(Boolean).map(async (rel) => {
+      const abs = path.resolve(UPLOAD_DIR, rel);
+      if (existsSync(abs)) {
+        try {
+          await unlink(abs);
+        } catch {
+          // best-effort cleanup
+        }
+      }
+    })
+  );
+  res.status(204).end();
+});
+
+// Achat: things to buy for a task (hardware, consumables, raw stock) — a
+// separate list from task_parts, not tied to one specific piece.
+const PURCHASE_STATUSES = ['a_commander', 'commande', 'en_cours_livraison', 'recu'];
+const PURCHASE_SELECT = `
+  SELECT p.id, p.machine, p.description, p.quantity, p.ref, p.status,
+         p.supplier_id, COALESCE(s.name, p.supplier_name) AS supplier_name, s.link AS supplier_link,
+         p.created_at, u.full_name AS created_by
+  FROM task_purchases p
+  JOIN users u ON u.id = p.created_by
+  LEFT JOIN suppliers s ON s.id = p.supplier_id
+`;
+
+router.post('/:id/purchases', async (req, res) => {
+  const { rows: taskRows } = await pool.query('SELECT * FROM tasks WHERE id = $1', [req.params.id]);
+  const task = taskRows[0];
+  if (!task) return res.status(404).json({ error: "Tâche introuvable" });
+
+  const canEdit = req.user.role === 'manager' || task.assigned_user_id === req.user.id;
+  if (!canEdit) return res.status(403).json({ error: "Vous ne pouvez modifier que vos propres tâches" });
+
+  const { machine, description, quantity, ref, supplier_id, supplier_name, status } = req.body || {};
+  if (!description) return res.status(400).json({ error: "La description de l'achat est obligatoire" });
+  if (status !== undefined && !PURCHASE_STATUSES.includes(status)) {
+    return res.status(400).json({ error: "Statut d'achat invalide" });
+  }
+  const qty = quantity !== undefined && quantity !== '' ? Number(quantity) : 1;
+  if (!Number.isInteger(qty) || qty < 1) {
+    return res.status(400).json({ error: 'La quantité doit être un entier positif' });
+  }
+
+  const { rows } = await pool.query(
+    `INSERT INTO task_purchases (task_id, machine, description, quantity, ref, supplier_id, supplier_name, status, created_by)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
+    [task.id, machine || null, description, qty, ref || null, supplier_id || null, supplier_name || null, status || 'a_commander', req.user.id]
+  );
+  const { rows: full } = await pool.query(`${PURCHASE_SELECT} WHERE p.id = $1`, [rows[0].id]);
+  res.status(201).json({ purchase: full[0] });
+});
+
+async function loadPurchaseForEdit(req, res, next) {
+  const { rows } = await pool.query(
+    `SELECT p.*, t.assigned_user_id
+     FROM task_purchases p JOIN tasks t ON t.id = p.task_id
+     WHERE p.id = $1`,
+    [req.params.purchaseId]
+  );
+  const purchase = rows[0];
+  if (!purchase) return res.status(404).json({ error: 'Achat introuvable' });
+  const canEdit = req.user.role === 'manager' || purchase.assigned_user_id === req.user.id;
+  if (!canEdit) return res.status(403).json({ error: "Vous ne pouvez modifier que les achats de vos propres tâches" });
+  req.purchase = purchase;
+  next();
+}
+
+router.patch('/purchases/:purchaseId', loadPurchaseForEdit, async (req, res) => {
+  const { machine, description, quantity, ref, supplier_id, supplier_name, status } = req.body || {};
+  if (status !== undefined && !PURCHASE_STATUSES.includes(status)) {
+    return res.status(400).json({ error: "Statut d'achat invalide" });
+  }
+  let qty = req.purchase.quantity;
+  if (quantity !== undefined && quantity !== '') {
+    qty = Number(quantity);
+    if (!Number.isInteger(qty) || qty < 1) {
+      return res.status(400).json({ error: 'La quantité doit être un entier positif' });
+    }
+  }
+  const next = {
+    machine: machine !== undefined ? (machine || null) : req.purchase.machine,
+    description: description ?? req.purchase.description,
+    quantity: qty,
+    ref: ref !== undefined ? (ref || null) : req.purchase.ref,
+    supplier_id: supplier_id !== undefined ? (supplier_id || null) : req.purchase.supplier_id,
+    supplier_name: supplier_name !== undefined ? (supplier_name || null) : req.purchase.supplier_name,
+    status: status ?? req.purchase.status,
+  };
+  await pool.query(
+    `UPDATE task_purchases SET machine = $1, description = $2, quantity = $3, ref = $4,
+                                supplier_id = $5, supplier_name = $6, status = $7
+     WHERE id = $8`,
+    [next.machine, next.description, next.quantity, next.ref, next.supplier_id, next.supplier_name, next.status, req.purchase.id]
+  );
+  const { rows: full } = await pool.query(`${PURCHASE_SELECT} WHERE p.id = $1`, [req.purchase.id]);
+  res.json({ purchase: full[0] });
+});
+
+router.delete('/purchases/:purchaseId', loadPurchaseForEdit, async (req, res) => {
+  await pool.query('DELETE FROM task_purchases WHERE id = $1', [req.purchase.id]);
   res.status(204).end();
 });
 

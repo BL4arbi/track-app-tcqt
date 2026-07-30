@@ -14,14 +14,36 @@ const history = ref([]);
 const documents = ref([]);
 const subtasks = ref([]);
 const parts = ref([]);
+const newPartMachine = ref('');
 const newPartName = ref('');
 const newPartComment = ref('');
+const newPartQuantity = ref(1);
+const newPartBrut = ref('');
 const addingPart = ref(false);
 const partError = ref('');
 const editingPartId = ref(null);
+const editPartMachine = ref('');
 const editPartName = ref('');
 const editPartComment = ref('');
+const editPartQuantity = ref(1);
+const editPartBrut = ref('');
 const savingPart = ref(false);
+const uploadingPartFileFor = ref(null);
+
+const purchases = ref([]);
+const suppliers = ref([]);
+const newPurchaseMachine = ref('');
+const newPurchaseDescription = ref('');
+const newPurchaseQuantity = ref(1);
+const newPurchaseRef = ref('');
+const newPurchaseSupplierChoice = ref('');
+const newPurchaseSupplierNewName = ref('');
+const addingPurchase = ref(false);
+const purchaseError = ref('');
+const editingPurchaseId = ref(null);
+const editPurchaseDraft = reactive({});
+const savingPurchase = ref(false);
+
 const teamMembers = ref([]);
 const parentOptions = ref([]);
 const loading = ref(true);
@@ -75,6 +97,30 @@ const PART_STATUS_LABELS = {
   en_fabrication: 'En fabrication',
   fabrique: 'Fabriqué',
 };
+const PURCHASE_STATUS_LABELS = {
+  a_commander: 'À commander',
+  commande: 'Commandé',
+  en_cours_livraison: 'En cours de livraison',
+  recu: 'Reçu',
+};
+const NO_MACHINE = '— Sans machine —';
+
+// Parts are ordered by machine from the backend (NULLS LAST) — group them
+// into sections here for display, matching the team's own spreadsheet
+// layout (a header row per machine, its pieces listed under it).
+const partsByMachine = computed(() => {
+  const groups = [];
+  let current = null;
+  for (const p of parts.value) {
+    const key = p.machine || NO_MACHINE;
+    if (!current || current.machine !== key) {
+      current = { machine: key, items: [] };
+      groups.push(current);
+    }
+    current.items.push(p);
+  }
+  return groups;
+});
 
 function formatDate(iso) {
   return new Date(iso).toLocaleString('fr-FR');
@@ -113,14 +159,16 @@ async function load() {
   loading.value = true;
   error.value = '';
   try {
-    const requests = [api.get(`/api/tasks/${route.params.id}`), api.get('/api/tasks/mine')];
+    const requests = [api.get(`/api/tasks/${route.params.id}`), api.get('/api/tasks/mine'), api.get('/api/suppliers')];
     if (auth.isManager) requests.push(api.get('/api/users/directory'));
-    const [taskRes, mineRes, teamRes] = await Promise.all(requests);
+    const [taskRes, mineRes, suppliersRes, teamRes] = await Promise.all(requests);
     task.value = taskRes.data.task;
     history.value = taskRes.data.history;
     documents.value = taskRes.data.documents;
     subtasks.value = taskRes.data.subtasks;
     parts.value = taskRes.data.parts;
+    purchases.value = taskRes.data.purchases;
+    suppliers.value = suppliersRes.data.suppliers;
     parentOptions.value = mineRes.data.tasks.filter((t) => t.id !== task.value.id);
     if (teamRes) teamMembers.value = teamRes.data.users;
   } catch (e) {
@@ -335,16 +383,46 @@ async function addPart() {
   addingPart.value = true;
   try {
     await api.post(`/api/tasks/${route.params.id}/parts`, {
+      machine: newPartMachine.value.trim() || null,
       name: newPartName.value.trim(),
       comment: newPartComment.value.trim() || null,
+      quantity: newPartQuantity.value || 1,
+      brut: newPartBrut.value.trim() || null,
     });
+    newPartMachine.value = '';
     newPartName.value = '';
     newPartComment.value = '';
+    newPartQuantity.value = 1;
+    newPartBrut.value = '';
     await load();
   } catch (e) {
     partError.value = e.response?.data?.error || "Échec de l'ajout";
   } finally {
     addingPart.value = false;
+  }
+}
+
+function partCadUrl(part) {
+  return `${api.defaults.baseURL}/api/tasks/parts/${part.id}/cad/download`;
+}
+function partPlanUrl(part) {
+  return `${api.defaults.baseURL}/api/tasks/parts/${part.id}/plan/download`;
+}
+
+async function uploadPartFile(part, kind, file) {
+  if (!file) return;
+  uploadingPartFileFor.value = `${part.id}-${kind}`;
+  const form = new FormData();
+  form.append('file', file);
+  try {
+    await api.patch(`/api/tasks/parts/${part.id}/${kind}`, form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    await load();
+  } catch (e) {
+    partError.value = e.response?.data?.error || "Échec de l'envoi du fichier";
+  } finally {
+    uploadingPartFileFor.value = null;
   }
 }
 
@@ -361,8 +439,11 @@ async function deletePart(part) {
 
 function startEditPart(part) {
   editingPartId.value = part.id;
+  editPartMachine.value = part.machine || '';
   editPartName.value = part.name;
   editPartComment.value = part.comment || '';
+  editPartQuantity.value = part.quantity;
+  editPartBrut.value = part.brut || '';
 }
 
 function cancelEditPart() {
@@ -373,13 +454,98 @@ async function saveEditPart(partId) {
   savingPart.value = true;
   try {
     await api.patch(`/api/tasks/parts/${partId}`, {
+      machine: editPartMachine.value.trim() || null,
       name: editPartName.value.trim(),
       comment: editPartComment.value.trim() || null,
+      quantity: editPartQuantity.value || 1,
+      brut: editPartBrut.value.trim() || null,
     });
     editingPartId.value = null;
     await load();
   } finally {
     savingPart.value = false;
+  }
+}
+
+// Achat: things to buy for a task, separate from the parts checklist.
+async function resolveSupplierId() {
+  if (newPurchaseSupplierChoice.value === '__new__') {
+    const name = newPurchaseSupplierNewName.value.trim();
+    if (!name) return null;
+    const { data } = await api.post('/api/suppliers', { name });
+    return data.supplier.id;
+  }
+  return newPurchaseSupplierChoice.value || null;
+}
+
+async function addPurchase() {
+  purchaseError.value = '';
+  if (!newPurchaseDescription.value.trim()) {
+    purchaseError.value = "La description de l'achat est obligatoire";
+    return;
+  }
+  addingPurchase.value = true;
+  try {
+    const supplier_id = await resolveSupplierId();
+    await api.post(`/api/tasks/${route.params.id}/purchases`, {
+      machine: newPurchaseMachine.value.trim() || null,
+      description: newPurchaseDescription.value.trim(),
+      quantity: newPurchaseQuantity.value || 1,
+      ref: newPurchaseRef.value.trim() || null,
+      supplier_id,
+    });
+    newPurchaseMachine.value = '';
+    newPurchaseDescription.value = '';
+    newPurchaseQuantity.value = 1;
+    newPurchaseRef.value = '';
+    newPurchaseSupplierChoice.value = '';
+    newPurchaseSupplierNewName.value = '';
+    await load();
+  } catch (e) {
+    purchaseError.value = e.response?.data?.error || "Échec de l'ajout";
+  } finally {
+    addingPurchase.value = false;
+  }
+}
+
+async function updatePurchaseStatus(purchase, status) {
+  await api.patch(`/api/tasks/purchases/${purchase.id}`, { status });
+  await load();
+}
+
+async function deletePurchase(purchase) {
+  if (!confirm(`Supprimer l'achat "${purchase.description}" ?`)) return;
+  await api.delete(`/api/tasks/purchases/${purchase.id}`);
+  await load();
+}
+
+function startEditPurchase(purchase) {
+  editingPurchaseId.value = purchase.id;
+  Object.assign(editPurchaseDraft, {
+    machine: purchase.machine || '',
+    description: purchase.description,
+    quantity: purchase.quantity,
+    ref: purchase.ref || '',
+  });
+}
+
+function cancelEditPurchase() {
+  editingPurchaseId.value = null;
+}
+
+async function saveEditPurchase(purchaseId) {
+  savingPurchase.value = true;
+  try {
+    await api.patch(`/api/tasks/purchases/${purchaseId}`, {
+      machine: editPurchaseDraft.machine.trim() || null,
+      description: editPurchaseDraft.description.trim(),
+      quantity: editPurchaseDraft.quantity || 1,
+      ref: editPurchaseDraft.ref.trim() || null,
+    });
+    editingPurchaseId.value = null;
+    await load();
+  } finally {
+    savingPurchase.value = false;
   }
 }
 
@@ -550,55 +716,121 @@ onMounted(load);
         <h2>Pièces à fabriquer ({{ parts.length }})</h2>
         <div v-if="!parts.length" class="muted">Aucune pièce à fabriquer en interne pour l'instant.</div>
         <table v-else>
+          <thead>
+            <tr>
+              <th style="width:1%">Statut</th>
+              <th>Pièce</th>
+              <th>Qté</th>
+              <th>Brut</th>
+              <th>CAO</th>
+              <th>Plan</th>
+              <th></th>
+            </tr>
+          </thead>
           <tbody>
-            <template v-for="p in parts" :key="p.id">
-              <tr v-if="editingPartId !== p.id">
-                <td style="width:1%; white-space:nowrap">
-                  <select
-                    class="part-status-select"
-                    :class="p.status"
-                    :disabled="!canEdit"
-                    :value="p.status"
-                    @change="updatePartStatus(p, $event.target.value)"
-                  >
-                    <option v-for="(lbl, val) in PART_STATUS_LABELS" :key="val" :value="val">{{ lbl }}</option>
-                  </select>
-                </td>
-                <td :style="{ textDecoration: p.status === 'fabrique' ? 'line-through' : 'none' }">
-                  {{ p.name }}
-                  <div v-if="p.comment" class="muted">{{ p.comment }}</div>
-                </td>
-                <td style="text-align:right; white-space:nowrap">
-                  <button v-if="canEdit" type="button" class="link-button" @click="startEditPart(p)">Modifier</button>
-                  <button v-if="canEdit" type="button" class="link-button" style="color:var(--danger); margin-left:8px" @click="deletePart(p)">Supprimer</button>
-                </td>
+            <template v-for="group in partsByMachine" :key="group.machine">
+              <tr>
+                <td colspan="7" class="machine-group-header">{{ group.machine }}</td>
               </tr>
-              <tr v-else>
-                <td colspan="3">
-                  <div class="form-row">
-                    <div class="field">
-                      <label style="font-size:13px; font-weight:600">Pièce à fabriquer</label>
-                      <input v-model="editPartName" />
+              <template v-for="p in group.items" :key="p.id">
+                <tr v-if="editingPartId !== p.id">
+                  <td style="white-space:nowrap">
+                    <select
+                      class="part-status-select"
+                      :class="p.status"
+                      :disabled="!canEdit"
+                      :value="p.status"
+                      @change="updatePartStatus(p, $event.target.value)"
+                    >
+                      <option v-for="(lbl, val) in PART_STATUS_LABELS" :key="val" :value="val">{{ lbl }}</option>
+                    </select>
+                  </td>
+                  <td :style="{ textDecoration: p.status === 'fabrique' ? 'line-through' : 'none' }">
+                    {{ p.name }}
+                    <div v-if="p.comment" class="muted">{{ p.comment }}</div>
+                  </td>
+                  <td>{{ p.quantity }}</td>
+                  <td>{{ p.brut || '—' }}</td>
+                  <td style="white-space:nowrap">
+                    <a v-if="p.cad_filename" :href="partCadUrl(p)" :title="p.cad_filename">{{ p.cad_filename }}</a>
+                    <span v-else class="muted">—</span>
+                    <template v-if="canEdit">
+                      <input type="file" :id="`cad-input-${p.id}`" style="display:none" @change="uploadPartFile(p, 'cad', $event.target.files[0]); $event.target.value = ''" />
+                      <label :for="`cad-input-${p.id}`" class="link-button" style="margin-left:6px; cursor:pointer">
+                        {{ uploadingPartFileFor === `${p.id}-cad` ? '…' : (p.cad_filename ? 'Remplacer' : '+ Ajouter') }}
+                      </label>
+                    </template>
+                  </td>
+                  <td style="white-space:nowrap">
+                    <a v-if="p.plan_filename" :href="partPlanUrl(p)" :title="p.plan_filename">{{ p.plan_filename }}</a>
+                    <span v-else class="muted">—</span>
+                    <template v-if="canEdit">
+                      <input type="file" :id="`plan-input-${p.id}`" style="display:none" @change="uploadPartFile(p, 'plan', $event.target.files[0]); $event.target.value = ''" />
+                      <label :for="`plan-input-${p.id}`" class="link-button" style="margin-left:6px; cursor:pointer">
+                        {{ uploadingPartFileFor === `${p.id}-plan` ? '…' : (p.plan_filename ? 'Remplacer' : '+ Ajouter') }}
+                      </label>
+                    </template>
+                  </td>
+                  <td style="text-align:right; white-space:nowrap">
+                    <button v-if="canEdit" type="button" class="link-button" @click="startEditPart(p)">Modifier</button>
+                    <button v-if="canEdit" type="button" class="link-button" style="color:var(--danger); margin-left:8px" @click="deletePart(p)">Supprimer</button>
+                  </td>
+                </tr>
+                <tr v-else>
+                  <td colspan="7">
+                    <div class="form-row">
+                      <div class="field">
+                        <label style="font-size:13px; font-weight:600">Machine</label>
+                        <input v-model="editPartMachine" placeholder="ex. MACHINE ORBITALE 8" />
+                      </div>
+                      <div class="field">
+                        <label style="font-size:13px; font-weight:600">Pièce à fabriquer</label>
+                        <input v-model="editPartName" />
+                      </div>
+                      <div class="field">
+                        <label style="font-size:13px; font-weight:600">Qté</label>
+                        <input v-model.number="editPartQuantity" type="number" min="1" style="width:70px" />
+                      </div>
                     </div>
-                    <div class="field">
-                      <label style="font-size:13px; font-weight:600">Commentaire</label>
-                      <input v-model="editPartComment" placeholder="(facultatif)" />
+                    <div class="form-row">
+                      <div class="field">
+                        <label style="font-size:13px; font-weight:600">Brut</label>
+                        <input v-model="editPartBrut" placeholder="ex. Plat étiré 80x30" />
+                      </div>
+                      <div class="field">
+                        <label style="font-size:13px; font-weight:600">Commentaire</label>
+                        <input v-model="editPartComment" placeholder="(facultatif)" />
+                      </div>
                     </div>
-                  </div>
-                  <div style="display:flex; gap:8px">
-                    <button type="button" :disabled="savingPart" @click="saveEditPart(p.id)">Enregistrer</button>
-                    <button type="button" class="secondary" @click="cancelEditPart">Annuler</button>
-                  </div>
-                </td>
-              </tr>
+                    <div style="display:flex; gap:8px">
+                      <button type="button" :disabled="savingPart" @click="saveEditPart(p.id)">Enregistrer</button>
+                      <button type="button" class="secondary" @click="cancelEditPart">Annuler</button>
+                    </div>
+                  </td>
+                </tr>
+              </template>
             </template>
           </tbody>
         </table>
         <form v-if="canEdit" @submit.prevent="addPart" style="margin-top:12px">
           <div class="form-row">
             <div class="field">
+              <label>Machine</label>
+              <input v-model="newPartMachine" placeholder="ex. MACHINE ORBITALE 8" />
+            </div>
+            <div class="field">
               <label>Pièce à fabriquer</label>
               <input v-model="newPartName" placeholder="ex. Bride support" />
+            </div>
+            <div class="field">
+              <label>Qté</label>
+              <input v-model.number="newPartQuantity" type="number" min="1" style="width:70px" />
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="field">
+              <label>Brut (matière à commander)</label>
+              <input v-model="newPartBrut" placeholder="ex. Plat étiré 80x30" />
             </div>
             <div class="field">
               <label>Commentaire (facultatif)</label>
@@ -607,6 +839,115 @@ onMounted(load);
           </div>
           <p v-if="partError" class="error-text">{{ partError }}</p>
           <button type="submit" :disabled="addingPart">{{ addingPart ? 'Ajout…' : 'Ajouter' }}</button>
+        </form>
+      </div>
+
+      <div class="card">
+        <h2>Achat ({{ purchases.length }})</h2>
+        <div v-if="!purchases.length" class="muted">Aucun achat pour l'instant.</div>
+        <table v-else>
+          <thead>
+            <tr>
+              <th style="width:1%">Statut</th>
+              <th>Description</th>
+              <th>Machine</th>
+              <th>Qté</th>
+              <th>Ref</th>
+              <th>Fournisseur</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            <template v-for="pu in purchases" :key="pu.id">
+              <tr v-if="editingPurchaseId !== pu.id">
+                <td style="white-space:nowrap">
+                  <select
+                    class="part-status-select"
+                    :class="pu.status"
+                    :disabled="!canEdit"
+                    :value="pu.status"
+                    @change="updatePurchaseStatus(pu, $event.target.value)"
+                  >
+                    <option v-for="(lbl, val) in PURCHASE_STATUS_LABELS" :key="val" :value="val">{{ lbl }}</option>
+                  </select>
+                </td>
+                <td>{{ pu.description }}</td>
+                <td>{{ pu.machine || '—' }}</td>
+                <td>{{ pu.quantity }}</td>
+                <td>{{ pu.ref || '—' }}</td>
+                <td>
+                  <a v-if="pu.supplier_link" :href="pu.supplier_link" target="_blank" rel="noopener">{{ pu.supplier_name }}</a>
+                  <template v-else>{{ pu.supplier_name || '—' }}</template>
+                </td>
+                <td style="text-align:right; white-space:nowrap">
+                  <button v-if="canEdit" type="button" class="link-button" @click="startEditPurchase(pu)">Modifier</button>
+                  <button v-if="canEdit" type="button" class="link-button" style="color:var(--danger); margin-left:8px" @click="deletePurchase(pu)">Supprimer</button>
+                </td>
+              </tr>
+              <tr v-else>
+                <td colspan="7">
+                  <div class="form-row">
+                    <div class="field">
+                      <label style="font-size:13px; font-weight:600">Description</label>
+                      <input v-model="editPurchaseDraft.description" />
+                    </div>
+                    <div class="field">
+                      <label style="font-size:13px; font-weight:600">Machine</label>
+                      <input v-model="editPurchaseDraft.machine" />
+                    </div>
+                    <div class="field">
+                      <label style="font-size:13px; font-weight:600">Qté</label>
+                      <input v-model.number="editPurchaseDraft.quantity" type="number" min="1" style="width:70px" />
+                    </div>
+                    <div class="field">
+                      <label style="font-size:13px; font-weight:600">Ref</label>
+                      <input v-model="editPurchaseDraft.ref" />
+                    </div>
+                  </div>
+                  <div style="display:flex; gap:8px">
+                    <button type="button" :disabled="savingPurchase" @click="saveEditPurchase(pu.id)">Enregistrer</button>
+                    <button type="button" class="secondary" @click="cancelEditPurchase">Annuler</button>
+                  </div>
+                </td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+        <form v-if="canEdit" @submit.prevent="addPurchase" style="margin-top:12px">
+          <div class="form-row">
+            <div class="field">
+              <label>Description</label>
+              <input v-model="newPurchaseDescription" placeholder="ex. Vis M4x2x80" />
+            </div>
+            <div class="field">
+              <label>Machine (facultatif)</label>
+              <input v-model="newPurchaseMachine" placeholder="ex. MACHINE ORBITALE 8" />
+            </div>
+            <div class="field">
+              <label>Qté</label>
+              <input v-model.number="newPurchaseQuantity" type="number" min="1" style="width:70px" />
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="field">
+              <label>Ref</label>
+              <input v-model="newPurchaseRef" placeholder="ex. 22400-0125250060" />
+            </div>
+            <div class="field">
+              <label>Fournisseur</label>
+              <select v-model="newPurchaseSupplierChoice">
+                <option value="">— aucun —</option>
+                <option v-for="s in suppliers" :key="s.id" :value="s.id">{{ s.name }}</option>
+                <option value="__new__">+ Nouveau fournisseur…</option>
+              </select>
+            </div>
+            <div v-if="newPurchaseSupplierChoice === '__new__'" class="field">
+              <label>Nom du nouveau fournisseur</label>
+              <input v-model="newPurchaseSupplierNewName" placeholder="ex. NORELEM" />
+            </div>
+          </div>
+          <p v-if="purchaseError" class="error-text">{{ purchaseError }}</p>
+          <button type="submit" :disabled="addingPurchase">{{ addingPurchase ? 'Ajout…' : 'Ajouter' }}</button>
         </form>
       </div>
 

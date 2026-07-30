@@ -8,6 +8,8 @@ import tasksRoutes from './routes/tasks.js';
 import documentsRoutes from './routes/documents.js';
 import usersRoutes from './routes/users.js';
 import adminRoutes from './routes/admin.js';
+import suppliersRoutes from './routes/suppliers.js';
+import purchasesRoutes from './routes/purchases.js';
 
 const app = express();
 
@@ -24,6 +26,8 @@ app.use('/api/tasks', tasksRoutes);
 app.use('/api', documentsRoutes);
 app.use('/api/users', usersRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/suppliers', suppliersRoutes);
+app.use('/api/purchases', purchasesRoutes);
 
 // eslint-disable-next-line no-unused-vars
 app.use((err, _req, res, _next) => {
