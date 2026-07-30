@@ -209,7 +209,11 @@ function animate() {
   renderer.setViewport(0, 0, clientWidth, clientHeight);
   renderer.render(scene, camera);
 
-  cubeMesh.quaternion.copy(camera.quaternion);
+  // The cube shows how the MODEL looks from the camera, not the camera's
+  // own rotation — those are inverses of each other. Copying camera.quaternion
+  // directly made the cube spin opposite to how the model actually turns
+  // on screen during a drag (reported as "le sens du drag est inversé").
+  cubeMesh.quaternion.copy(camera.quaternion).invert();
   const { x, y, size } = cubeViewport(clientWidth, clientHeight);
   renderer.setScissorTest(true);
   renderer.setScissor(x, y, size, size);
