@@ -17,8 +17,30 @@ let renderer, scene, camera, controls, mesh, edges, animationId, resizeObserver;
 // the main camera every frame so it always shows the current viewing
 // direction. Click a face to snap the main camera to look straight at it,
 // or drag the cube to free-orbit the model — same as SolidWorks' cube.
+// Four rotate-arrow buttons sit around it (also SolidWorks-style) for
+// stepping the view by 90° instead of free dragging.
 const CUBE_SIZE = 84;
-const CUBE_MARGIN = 10;
+const WIDGET_MARGIN = 10;
+const ARROW_SIZE = 22;
+const ARROW_GAP = 4;
+// Space reserved around the cube for the top/right arrows — the cube itself
+// sits inset from the corner by this much on both axes.
+const CUBE_INSET = ARROW_SIZE + ARROW_GAP;
+
+// Precomputed pixel offsets for the 4 overlay arrow buttons (plain HTML,
+// not WebGL — far simpler to style/position reliably than drawing curved
+// arrows in the 3D scene). The whole widget is corner-anchored with fixed
+// pixel offsets, so these never change with container size.
+const cubeTop = WIDGET_MARGIN + CUBE_INSET; // distance from container top to the cube's top edge
+const cubeRight = WIDGET_MARGIN + CUBE_INSET; // distance from container right to the cube's right edge
+const cubeCenterOffset = (CUBE_SIZE - ARROW_SIZE) / 2;
+const arrowStyles = {
+  up: { top: `${WIDGET_MARGIN}px`, right: `${cubeRight + cubeCenterOffset}px` },
+  down: { top: `${cubeTop + CUBE_SIZE + ARROW_GAP}px`, right: `${cubeRight + cubeCenterOffset}px` },
+  left: { top: `${cubeTop + cubeCenterOffset}px`, right: `${cubeRight + CUBE_SIZE + ARROW_GAP}px` },
+  right: { top: `${cubeTop + cubeCenterOffset}px`, right: `${WIDGET_MARGIN}px` },
+};
+
 let cubeScene, cubeCamera, cubeMesh;
 const FACE_DEFS = [
   { label: 'DROITE', dir: [1, 0, 0] },
@@ -63,11 +85,31 @@ function setupCube() {
 
 function cubeViewport(clientWidth, clientHeight) {
   return {
-    x: clientWidth - CUBE_SIZE - CUBE_MARGIN,
-    y: clientHeight - CUBE_SIZE - CUBE_MARGIN,
+    x: clientWidth - CUBE_SIZE - cubeRight,
+    y: clientHeight - CUBE_SIZE - cubeTop,
     size: CUBE_SIZE,
   };
 }
+
+// Steps the camera by a fixed 90° increment around the target, along a
+// spherical path — the arrow buttons around the cube, for stepping the
+// view like SolidWorks' rather than free dragging.
+function rotateView(deltaPolar, deltaAzimuth) {
+  const offset = new THREE.Vector3().subVectors(camera.position, controls.target);
+  const spherical = new THREE.Spherical().setFromVector3(offset);
+  spherical.theta += deltaAzimuth;
+  spherical.phi = THREE.MathUtils.clamp(spherical.phi + deltaPolar, 0.001, Math.PI - 0.001);
+  offset.setFromSpherical(spherical);
+  camera.position.copy(controls.target).add(offset);
+  camera.up.set(0, 1, 0);
+  camera.lookAt(controls.target);
+  controls.update();
+}
+
+function rotateViewUp() { rotateView(-Math.PI / 2, 0); }
+function rotateViewDown() { rotateView(Math.PI / 2, 0); }
+function rotateViewLeft() { rotateView(0, -Math.PI / 2); }
+function rotateViewRight() { rotateView(0, Math.PI / 2); }
 
 // SolidWorks-style: clicking a face snaps the view to it, but dragging the
 // cube free-orbits the model just like dragging anywhere else on the
@@ -85,11 +127,11 @@ function pointerToCubeNdc(event, rect) {
   const py = event.clientY - rect.top;
   const { x: vx, y: vy, size } = cubeViewport(rect.width, rect.height);
   // Viewport y is bottom-up (WebGL convention), pointer y is top-down.
-  const cubeTop = rect.height - vy - size;
-  if (px < vx || px > vx + size || py < cubeTop || py > cubeTop + size) return null;
+  const screenTop = rect.height - vy - size;
+  if (px < vx || px > vx + size || py < screenTop || py > screenTop + size) return null;
   return {
     x: ((px - vx) / size) * 2 - 1,
-    y: -(((py - cubeTop) / size) * 2 - 1),
+    y: -(((py - screenTop) / size) * 2 - 1),
   };
 }
 
@@ -272,6 +314,12 @@ onBeforeUnmount(() => {
     <div ref="container" class="model-viewer"></div>
     <p v-if="loadingModel" class="model-viewer-status muted">Chargement du modèle 3D…</p>
     <p v-if="loadError" class="model-viewer-status error-text">{{ loadError }}</p>
+    <template v-if="!loadingModel && !loadError">
+      <button type="button" class="cube-arrow" :style="arrowStyles.up" title="Tourner vers le haut" @click="rotateViewUp">▲</button>
+      <button type="button" class="cube-arrow" :style="arrowStyles.down" title="Tourner vers le bas" @click="rotateViewDown">▼</button>
+      <button type="button" class="cube-arrow" :style="arrowStyles.left" title="Tourner vers la gauche" @click="rotateViewLeft">◀</button>
+      <button type="button" class="cube-arrow" :style="arrowStyles.right" title="Tourner vers la droite" @click="rotateViewRight">▶</button>
+    </template>
   </div>
 </template>
 
@@ -296,4 +344,21 @@ onBeforeUnmount(() => {
   border-radius: 6px;
   border: 1px solid var(--border);
 }
+.cube-arrow {
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  line-height: 1;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  cursor: pointer;
+}
+.cube-arrow:hover { background: var(--accent-bg); color: var(--accent); border-color: var(--accent); }
 </style>
