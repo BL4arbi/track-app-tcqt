@@ -61,7 +61,12 @@ const savingReminder = ref(false);
 const reminderError = ref('');
 
 const STATUS_LABELS = { active: 'En cours', paused: 'En pause', done: 'Terminé' };
-const PART_STATUS_LABELS = { a_commander: 'À commander', commande: 'Commandé (non livré)', fabrique: 'Fabriqué' };
+const PART_STATUS_LABELS = {
+  a_commander: 'À commander',
+  commande: 'Commandé (non livré)',
+  en_fabrication: 'En fabrication',
+  fabrique: 'Fabriqué',
+};
 
 function formatDate(iso) {
   return new Date(iso).toLocaleString('fr-FR');

@@ -63,11 +63,15 @@ CREATE TABLE IF NOT EXISTS task_parts (
   name        TEXT NOT NULL,
   comment     TEXT,
   done        BOOLEAN NOT NULL DEFAULT FALSE,
-  status      TEXT NOT NULL DEFAULT 'a_commander' CHECK (status IN ('a_commander', 'commande', 'fabrique')),
+  status      TEXT NOT NULL DEFAULT 'a_commander' CHECK (status IN ('a_commander', 'commande', 'en_fabrication', 'fabrique')),
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 ALTER TABLE task_parts ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'a_commander';
+-- Widen the CHECK constraint for databases created before 'en_fabrication'
+-- existed (the CREATE TABLE above only applies to brand-new databases).
+ALTER TABLE task_parts DROP CONSTRAINT IF EXISTS task_parts_status_check;
+ALTER TABLE task_parts ADD CONSTRAINT task_parts_status_check CHECK (status IN ('a_commander', 'commande', 'en_fabrication', 'fabrique'));
 -- One-time backfill for rows created before `status` existed: preserve
 -- their prior "done" flag as the equivalent final status.
 UPDATE task_parts SET status = 'fabrique' WHERE done = true AND status = 'a_commander';

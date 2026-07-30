@@ -161,6 +161,7 @@ tr:hover td { background: var(--bg-subtle); }
 }
 .part-status-select.a_commander { background: rgba(150, 150, 150, 0.18); color: var(--text); }
 .part-status-select.commande { background: rgba(200, 150, 0, 0.15); color: #a67c00; }
+.part-status-select.en_fabrication { background: var(--accent-bg); color: var(--accent); }
 .part-status-select.fabrique { background: rgba(26, 127, 75, 0.15); color: var(--success); }
 
 .reminder-card { border-color: var(--accent); }

@@ -224,7 +224,7 @@ router.delete('/:id', async (req, res) => {
 
 // Manufactured-parts checklist: in-house elements to build for a task,
 // each with an optional comment and a procurement/manufacturing status.
-const PART_STATUSES = ['a_commander', 'commande', 'fabrique'];
+const PART_STATUSES = ['a_commander', 'commande', 'en_fabrication', 'fabrique'];
 
 router.post('/:id/parts', async (req, res) => {
   const { rows: taskRows } = await pool.query('SELECT * FROM tasks WHERE id = $1', [req.params.id]);
