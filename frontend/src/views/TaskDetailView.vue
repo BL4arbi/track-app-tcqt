@@ -27,11 +27,18 @@ const parentOptions = ref([]);
 const loading = ref(true);
 const error = ref('');
 
-const nativeFile = ref(null);
+const nativeFiles = ref([]);
 const previewFile = ref(null);
 const previewModel = ref(null);
 const uploadError = ref('');
 const uploading = ref(false);
+
+function addNativeFiles(fileList) {
+  nativeFiles.value = [...nativeFiles.value, ...Array.from(fileList)];
+}
+function removeNativeFile(index) {
+  nativeFiles.value = nativeFiles.value.filter((_, i) => i !== index);
+}
 
 const isElectron = typeof window !== 'undefined' && !!window.electronAPI;
 const generatingPreview = ref(false);
@@ -46,6 +53,7 @@ const deletingId = ref(null);
 const deleteError = ref('');
 
 const viewingModelFor = ref(null);
+const viewingPdfFor = ref(null);
 
 const editing = ref(false);
 const editDraft = reactive({});
@@ -86,6 +94,10 @@ const canEdit = computed(() => task.value && (auth.isManager || task.value.assig
 function previewUrl(doc) {
   if (!doc.preview_image_path) return null;
   return `${api.defaults.baseURL}/uploads/${doc.preview_image_path}`;
+}
+
+function isPdfPreview(doc) {
+  return !!doc.preview_image_path && doc.preview_image_path.toLowerCase().endsWith('.pdf');
 }
 
 function modelUrl(doc) {
@@ -188,12 +200,12 @@ async function clearReminder() {
 
 async function upload() {
   uploadError.value = '';
-  if (!nativeFile.value) {
-    uploadError.value = 'Sélectionnez le fichier SolidWorks natif (ou PDF) à envoyer';
+  if (!nativeFiles.value.length) {
+    uploadError.value = 'Sélectionnez au moins un fichier à envoyer';
     return;
   }
   const form = new FormData();
-  form.append('file', nativeFile.value);
+  for (const f of nativeFiles.value) form.append('file', f);
   if (previewFile.value) form.append('previewImage', previewFile.value);
   if (previewModel.value) form.append('previewModel', previewModel.value);
 
@@ -202,7 +214,7 @@ async function upload() {
     await api.post(`/api/tasks/${route.params.id}/documents`, form, {
       headers: { 'Content-Type': 'multipart/form-data' },
     });
-    nativeFile.value = null;
+    nativeFiles.value = [];
     previewFile.value = null;
     previewModel.value = null;
     await load();
@@ -235,11 +247,11 @@ async function deleteTask() {
 
 async function generatePreviewFromSolidWorks() {
   generatePreviewError.value = '';
-  if (!nativeFile.value) {
+  if (!nativeFiles.value.length) {
     generatePreviewError.value = "Sélectionnez d'abord le fichier natif";
     return;
   }
-  const localPath = window.electronAPI.getPathForFile(nativeFile.value);
+  const localPath = window.electronAPI.getPathForFile(nativeFiles.value[0]);
   if (!localPath) {
     generatePreviewError.value = "Impossible de résoudre le chemin du fichier sélectionné";
     return;
@@ -308,6 +320,10 @@ async function deleteDocument(doc) {
 
 function toggleModel(docId) {
   viewingModelFor.value = viewingModelFor.value === docId ? null : docId;
+}
+
+function togglePdf(docId) {
+  viewingPdfFor.value = viewingPdfFor.value === docId ? null : docId;
 }
 
 async function addPart() {
@@ -600,7 +616,8 @@ onMounted(load);
         <div v-if="!documents.length" class="muted">Aucun document envoyé pour l'instant.</div>
         <template v-for="doc in documents" :key="doc.id">
           <div class="doc-row">
-            <img v-if="previewUrl(doc)" :src="previewUrl(doc)" class="preview-thumb" :alt="doc.original_filename" />
+            <img v-if="previewUrl(doc) && !isPdfPreview(doc)" :src="previewUrl(doc)" class="preview-thumb" :alt="doc.original_filename" />
+            <div v-else-if="isPdfPreview(doc)" class="preview-thumb" style="display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700">PDF</div>
             <div v-else class="preview-thumb" style="display:flex;align-items:center;justify-content:center;font-size:11px" >aucun aperçu</div>
             <div style="flex:1">
               <div>{{ doc.original_filename }}</div>
@@ -618,6 +635,9 @@ onMounted(load);
               </template>
             </div>
             <div style="display:flex; gap:12px; align-items:center; white-space:nowrap">
+              <button v-if="isPdfPreview(doc)" type="button" class="link-button" @click="togglePdf(doc.id)">
+                {{ viewingPdfFor === doc.id ? "Fermer l'aperçu" : "Voir l'aperçu PDF" }}
+              </button>
               <button v-if="doc.model_path" type="button" class="link-button" @click="toggleModel(doc.id)">
                 {{ viewingModelFor === doc.id ? 'Fermer la vue 3D' : 'Voir en 3D' }}
               </button>
@@ -634,24 +654,31 @@ onMounted(load);
               </button>
             </div>
           </div>
+          <iframe v-if="viewingPdfFor === doc.id" :src="previewUrl(doc)" style="width:100%; height:600px; border:1px solid var(--border); border-radius:8px; margin-bottom:16px"></iframe>
           <ModelViewer v-if="viewingModelFor === doc.id" :model-url="modelUrl(doc)" style="height:420px; margin-bottom:16px" />
         </template>
 
-        <form @submit.prevent="upload" style="margin-top:16px">
+        <form v-if="canEdit" @submit.prevent="upload" style="margin-top:16px">
           <div class="form-row">
             <div class="field">
-              <label>Fichier (tous types acceptés)</label>
-              <input type="file" @change="nativeFile = $event.target.files[0]" />
+              <label>Fichiers (tous types acceptés, plusieurs à la fois)</label>
+              <input type="file" multiple @change="addNativeFiles($event.target.files); $event.target.value = ''" />
+              <ul v-if="nativeFiles.length" class="staged-file-list">
+                <li v-for="(f, i) in nativeFiles" :key="i">
+                  {{ f.name }}
+                  <button type="button" class="link-button" style="color:var(--danger)" @click="removeNativeFile(i)">×</button>
+                </li>
+              </ul>
             </div>
             <div class="field">
-              <label>Image d'aperçu (.png / .jpg)</label>
+              <label>Aperçu (.png / .jpg / .pdf)</label>
               <input type="file" @change="previewFile = $event.target.files[0]" />
               <button
                 v-if="isElectron"
                 type="button"
                 class="secondary"
                 style="margin-top:6px"
-                :disabled="!nativeFile || generatingPreview"
+                :disabled="!nativeFiles.length || generatingPreview"
                 @click="generatePreviewFromSolidWorks"
               >
                 {{ generatingPreview ? 'Génération…' : 'Générer via SolidWorks (bêta)' }}

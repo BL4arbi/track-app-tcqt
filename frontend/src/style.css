@@ -196,9 +196,14 @@ tr:hover td { background: var(--bg-subtle); }
   background: var(--bg-subtle);
 }
 .preview-thumb-sm--empty { background-image: linear-gradient(135deg, var(--border) 25%, transparent 25%, transparent 50%, var(--border) 50%, var(--border) 75%, transparent 75%, transparent); background-size: 8px 8px; }
+.preview-thumb-sm--pdf { display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; color: var(--text); }
 
 .doc-row { display: flex; gap: 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--border); }
 .doc-row:last-child { border-bottom: none; }
+
+.staged-file-list { list-style: none; padding: 0; margin: 6px 0 0; display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
+.staged-file-list li { display: flex; align-items: center; gap: 8px; }
+.staged-file-list .link-button { font-size: 15px; font-weight: 700; line-height: 1; }
 
 /* Per-user identity chips — color always paired with initials/name, never alone. */
 .user-chip { display: inline-flex; align-items: center; gap: 6px; }

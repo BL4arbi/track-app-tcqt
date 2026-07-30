@@ -11,7 +11,9 @@ const router = Router();
 router.use(requireAuth);
 
 const UPLOAD_DIR = process.env.UPLOAD_DIR || './uploads';
-const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg']);
+// The "preview" attached to a document can be an image (rendered as a
+// thumbnail) or a PDF (rendered inline in an embed on Task Detail).
+const PREVIEW_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.pdf']);
 const MODEL_EXTENSIONS = new Set(['.stl']);
 
 // multer/busboy decode multipart filename metadata as Latin-1 regardless of
@@ -39,8 +41,8 @@ const storage = multer.diskStorage({
 function fileFilter(_req, file, cb) {
   const ext = path.extname(fixFilenameEncoding(file.originalname)).toLowerCase();
   // The main "file" field accepts any file type — no whitelist.
-  if (file.fieldname === 'previewImage' && !IMAGE_EXTENSIONS.has(ext)) {
-    return cb(new Error(`L'aperçu doit être un png/jpg, reçu : ${ext}`));
+  if (file.fieldname === 'previewImage' && !PREVIEW_EXTENSIONS.has(ext)) {
+    return cb(new Error(`L'aperçu doit être un png/jpg/pdf, reçu : ${ext}`));
   }
   if (file.fieldname === 'previewModel' && !MODEL_EXTENSIONS.has(ext)) {
     return cb(new Error(`Le modèle 3D doit être un .stl, reçu : ${ext}`));
@@ -57,40 +59,59 @@ function ensureDirs(req, _res, next) {
 
 const upload = multer({ storage, fileFilter, limits: { fileSize: 200 * 1024 * 1024 } });
 
+// Checked before multer even starts writing files to disk — anyone can
+// view/download a task's documents (e.g. from the Dashboard), but only
+// the task's owner or a manager can add new ones.
+async function requireTaskEditAccess(req, res, next) {
+  const { rows } = await pool.query('SELECT * FROM tasks WHERE id = $1', [req.params.id]);
+  const task = rows[0];
+  if (!task) return res.status(404).json({ error: "Tâche introuvable" });
+  const canEdit = req.user.role === 'manager' || task.assigned_user_id === req.user.id;
+  if (!canEdit) return res.status(403).json({ error: "Vous ne pouvez ajouter des documents qu'à vos propres tâches" });
+  req.task = task;
+  next();
+}
+
 router.post(
   '/tasks/:id/documents',
+  requireTaskEditAccess,
   ensureDirs,
   upload.fields([
-    { name: 'file', maxCount: 1 },
+    { name: 'file', maxCount: 20 },
     { name: 'previewImage', maxCount: 1 },
     { name: 'previewModel', maxCount: 1 },
   ]),
   async (req, res) => {
-    const { rows: taskRows } = await pool.query('SELECT id FROM tasks WHERE id = $1', [req.params.id]);
-    if (!taskRows[0]) return res.status(404).json({ error: "Tâche introuvable" });
-
-    const nativeFile = req.files?.file?.[0];
+    const nativeFiles = req.files?.file || [];
     const previewImage = req.files?.previewImage?.[0];
     const previewModel = req.files?.previewModel?.[0];
-    if (!nativeFile) return res.status(400).json({ error: "Le fichier est obligatoire" });
+    if (!nativeFiles.length) return res.status(400).json({ error: "Le fichier est obligatoire" });
 
     const toRelative = (f) => path.relative(UPLOAD_DIR, f.path).split(path.sep).join('/');
 
-    const fixedName = fixFilenameEncoding(nativeFile.originalname);
-    const { rows } = await pool.query(
-      `INSERT INTO documents (task_id, uploaded_by, original_filename, file_type, storage_path, preview_image_path, model_path)
-       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
-      [
-        req.params.id,
-        req.user.id,
-        fixedName,
-        path.extname(fixedName).slice(1).toLowerCase(),
-        toRelative(nativeFile),
-        previewImage ? toRelative(previewImage) : null,
-        previewModel ? toRelative(previewModel) : null,
-      ]
-    );
-    res.status(201).json({ document: rows[0] });
+    // Multiple native files can be uploaded together, but the preview
+    // (image/PDF) and 3D model only make sense attached to one document —
+    // they land on the first file in the batch.
+    const documents = [];
+    for (let i = 0; i < nativeFiles.length; i++) {
+      const nativeFile = nativeFiles[i];
+      const fixedName = fixFilenameEncoding(nativeFile.originalname);
+      const { rows } = await pool.query(
+        `INSERT INTO documents (task_id, uploaded_by, original_filename, file_type, storage_path, preview_image_path, model_path)
+         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+        [
+          req.params.id,
+          req.user.id,
+          fixedName,
+          path.extname(fixedName).slice(1).toLowerCase(),
+          toRelative(nativeFile),
+          i === 0 && previewImage ? toRelative(previewImage) : null,
+          i === 0 && previewModel ? toRelative(previewModel) : null,
+        ]
+      );
+      documents.push(rows[0]);
+    }
+    res.status(201).json({ document: documents[0], documents });
   }
 );
 
@@ -104,7 +125,7 @@ const previewOnlyStorage = multer.diskStorage({
 });
 function previewOnlyFilter(_req, file, cb) {
   const ext = path.extname(fixFilenameEncoding(file.originalname)).toLowerCase();
-  if (!IMAGE_EXTENSIONS.has(ext)) return cb(new Error(`L'aperçu doit être un png/jpg, reçu : ${ext}`));
+  if (!PREVIEW_EXTENSIONS.has(ext)) return cb(new Error(`L'aperçu doit être un png/jpg/pdf, reçu : ${ext}`));
   cb(null, true);
 }
 const uploadPreviewOnly = multer({ storage: previewOnlyStorage, fileFilter: previewOnlyFilter, limits: { fileSize: 50 * 1024 * 1024 } });

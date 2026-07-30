@@ -32,6 +32,9 @@ function previewUrl(t) {
   if (!t.preview_image_path) return null;
   return `${api.defaults.baseURL}/uploads/${t.preview_image_path}`;
 }
+function isPdfPreview(t) {
+  return !!t.preview_image_path && t.preview_image_path.toLowerCase().endsWith('.pdf');
+}
 function modelUrl(t) {
   if (!t.model_path) return null;
   return `${api.defaults.baseURL}/uploads/${t.model_path}`;
@@ -101,7 +104,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
         <tr v-for="t in tasks" :key="t.id" class="clickable-row" @click="openTask(t.id)">
           <td>
             <div class="thumb-cell">
-              <img v-if="previewUrl(t)" :src="previewUrl(t)" class="preview-thumb-sm" :alt="t.title" />
+              <img v-if="previewUrl(t) && !isPdfPreview(t)" :src="previewUrl(t)" class="preview-thumb-sm" :alt="t.title" />
+              <span v-else-if="isPdfPreview(t)" class="preview-thumb-sm preview-thumb-sm--pdf">PDF</span>
               <span v-else class="preview-thumb-sm preview-thumb-sm--empty"></span>
               <button v-if="t.model_path" type="button" class="thumb-3d-badge" title="Voir en 3D" @click.stop="openModel(t)">3D</button>
             </div>
