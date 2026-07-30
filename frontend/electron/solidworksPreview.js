@@ -66,7 +66,7 @@ export async function generateSolidWorksPreview(nativeFilePath) {
     // network). 10 minutes gives real large-assembly opens room to finish
     // without leaving a hung SolidWorks process running indefinitely.
     const timeoutMs = 10 * 60_000;
-    await execFileAsync('cscript.exe', args, { timeout: timeoutMs });
+    const { stderr } = await execFileAsync('cscript.exe', args, { timeout: timeoutMs });
 
     const pngBuffer = await readFile(tmpPng);
     const result = { success: true, base64: pngBuffer.toString('base64') };
@@ -76,7 +76,14 @@ export async function generateSolidWorksPreview(nativeFilePath) {
         const stlBuffer = await readFile(tmpStl);
         result.modelBase64 = stlBuffer.toString('base64');
       } catch {
-        // STL export is best-effort — the PNG preview still succeeded.
+        // A non-fatal STL failure doesn't make execFile throw (the script
+        // still exits 0), so it wouldn't otherwise surface anywhere — but
+        // the 3D view matters, so tell the user explicitly instead of
+        // silently handing back a preview with no model.
+        const stlWarnLine = stderr?.toString().split('\n').find((l) => l.includes('STL_WARN:'));
+        result.warning = stlWarnLine
+          ? `Aperçu généré, mais la vue 3D a échoué : ${stlWarnLine.replace('STL_WARN:', '').trim()}`
+          : "Aperçu généré, mais la vue 3D (modèle STL) n'a pas pu être générée.";
       }
     }
 

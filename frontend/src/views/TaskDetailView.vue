@@ -204,6 +204,8 @@ async function generatePreviewFromSolidWorks() {
     previewFile.value = new File([base64ToBytes(result.base64)], 'apercu-solidworks.png', { type: 'image/png' });
     if (result.modelBase64) {
       previewModel.value = new File([base64ToBytes(result.modelBase64)], 'modele-solidworks.stl', { type: 'model/stl' });
+    } else if (result.warning) {
+      generatePreviewError.value = result.warning;
     }
   } catch (e) {
     generatePreviewError.value = e.message || 'Échec de la génération automatique';

@@ -139,13 +139,33 @@ End If
 LogStep logPath, "PNG exporte."
 
 If canExportStl And outputStlPath <> "" Then
+  ' swSTLComponentsIntoOneFile (value 72 in swUserPreferenceToggle_e, read
+  ' directly off this machine's SolidWorks.Interop.swconst.dll via .NET
+  ' reflection to be sure of the exact number). Confirmed live: this was
+  ' OFF by default here, which is why an assembly's STL "succeeded" with
+  ' no error but silently wrote one separate STL per component (named
+  ' "<name> - <component>-N.STL") instead of the single combined file we
+  ' asked for — every downstream check (Err.Number, the return value)
+  ' looked fine, so this was invisible without actually looking at disk.
+  ' Saved and restored around the export so we don't permanently change
+  ' the user's own SolidWorks settings.
+  swSTLComponentsIntoOneFile = 72
+  originalStlToggle = sw.GetUserPreferenceToggle(swSTLComponentsIntoOneFile)
+  sw.SetUserPreferenceToggle swSTLComponentsIntoOneFile, True
+
   LogStep logPath, "Export STL vers " & outputStlPath & "..."
   okStl = model.SaveAs(outputStlPath)
-  If Err.Number <> 0 Or Not okStl Then
-    ' Not fatal — the PNG already succeeded, the 3D viewer is a bonus.
-    WScript.StdErr.WriteLine "STL_WARN: " & Err.Description
-    LogStep logPath, "AVERTISSEMENT export STL (non bloquant) : " & Err.Description
-    Err.Clear
+  stlErrDesc = Err.Description
+  stlFailed = (Err.Number <> 0 Or Not okStl)
+  Err.Clear
+
+  sw.SetUserPreferenceToggle swSTLComponentsIntoOneFile, originalStlToggle
+
+  If stlFailed Then
+    ' Not fatal — the PNG already succeeded, but this is surfaced to the
+    ' user (not just logged) since the 3D view matters, not a silent bonus.
+    WScript.StdErr.WriteLine "STL_WARN: " & stlErrDesc
+    LogStep logPath, "AVERTISSEMENT export STL (non bloquant) : " & stlErrDesc
   Else
     LogStep logPath, "STL exporte."
   End If
