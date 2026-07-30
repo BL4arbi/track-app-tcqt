@@ -43,6 +43,43 @@ function resolveExternallyReadablePath(p) {
 const SUPPORTED_EXTENSIONS = new Set(['.sldprt', '.sldasm', '.slddrw']);
 const SOLID_EXTENSIONS = new Set(['.sldprt', '.sldasm']); // can export STL
 
+// The .vbs script only closes the SolidWorks instance it started when it
+// exits normally (its own Finish() sub runs on success or on a handled
+// Fail()) — but a timeout kills cscript.exe from the OUTSIDE (SIGTERM),
+// so that cleanup code never gets a chance to run at all. That left a
+// real orphaned SLDWORKS.exe behind on every timeout, found running
+// headlessly in Task Manager. Fixed by snapshotting SLDWORKS.exe PIDs
+// from Node before starting, and on a timeout, killing only whichever
+// PIDs are new since that snapshot — never touches a SolidWorks session
+// the user already had open before we started.
+async function listSldworksPids() {
+  try {
+    const { stdout } = await execFileAsync('powershell.exe', [
+      '-NoProfile', '-NonInteractive', '-Command',
+      "(Get-Process SLDWORKS -ErrorAction SilentlyContinue).Id -join ','",
+    ]);
+    return stdout.trim().split(',').map((s) => s.trim()).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+async function killOrphanedSldworksProcesses(pidsBefore) {
+  const pidsAfter = await listSldworksPids();
+  const newPids = pidsAfter.filter((pid) => !pidsBefore.includes(pid));
+  await Promise.all(
+    newPids.map((pid) =>
+      execFileAsync('powershell.exe', [
+        '-NoProfile', '-NonInteractive', '-Command',
+        `Stop-Process -Id ${pid} -Force -ErrorAction SilentlyContinue`,
+      ]).catch(() => {
+        // best-effort — nothing more we can do if this fails too
+      })
+    )
+  );
+  return newPids;
+}
+
 export async function generateSolidWorksPreview(nativeFilePath) {
   if (process.platform !== 'win32') {
     return { success: false, error: "La génération automatique d'aperçu nécessite Windows." };
@@ -72,6 +109,8 @@ export async function generateSolidWorksPreview(nativeFilePath) {
       return '';
     }
   }
+
+  const pidsBefore = await listSldworksPids();
 
   try {
     const args = ['//nologo', scriptPath, nativeFilePath, tmpPng];
@@ -108,6 +147,17 @@ export async function generateSolidWorksPreview(nativeFilePath) {
     const stepLog = await readStepLog();
     const logSuffix = stepLog ? `\n\nDétail des étapes :\n${stepLog}` : '';
 
+    // Any failure here (timeout kill, or cscript.exe crashing outright) is
+    // an ABNORMAL exit — the .vbs script's own cleanup (which closes
+    // SolidWorks only if it started it) only runs on a NORMAL exit, so it
+    // never gets a chance to run in either case. Cleaning up here, on every
+    // error path, is the only place that's guaranteed to run regardless of
+    // why cscript.exe stopped.
+    const killedPids = await killOrphanedSldworksProcesses(pidsBefore);
+    const cleanupNote = killedPids.length
+      ? ` (instance(s) SolidWorks orpheline(s) fermée(s) automatiquement : PID ${killedPids.join(', ')})`
+      : '';
+
     // A timeout kill leaves stderr empty (cscript never got to write to it)
     // — that blank-error shape usually means SolidWorks popped a dialog
     // (e.g. asking to resolve/locate a missing referenced part) and is
@@ -117,7 +167,8 @@ export async function generateSolidWorksPreview(nativeFilePath) {
         success: false,
         error: `L'ouverture a dépassé le délai de ${Math.round(timeoutMs / 60_000)} min et a été interrompue. ` +
           "Le fichier est peut-être très volumineux, ou SolidWorks attend une réponse à une boîte de dialogue " +
-          "(référence introuvable, etc.) — ouvrez le fichier manuellement dans SolidWorks pour vérifier." + logSuffix,
+          "(référence introuvable, etc.) — ouvrez le fichier manuellement dans SolidWorks pour vérifier." +
+          cleanupNote + logSuffix,
       };
     }
     // Otherwise execFile errors include stderr, which carries the
@@ -125,7 +176,7 @@ export async function generateSolidWorksPreview(nativeFilePath) {
     // If stderr is also empty, cscript.exe likely crashed outright — the
     // step log is then the only real diagnostic available.
     const detail = e.stderr?.toString().trim() || e.message;
-    return { success: false, error: detail + logSuffix };
+    return { success: false, error: detail + cleanupNote + logSuffix };
   } finally {
     try {
       await unlink(tmpPng);
