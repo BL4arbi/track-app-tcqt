@@ -229,9 +229,16 @@ const partFileStorage = multer.diskStorage({
     cb(null, `${randomUUID()}${path.extname(fixFilenameEncoding(file.originalname)).toLowerCase()}`);
   },
 });
-const uploadPartFile = multer({ storage: partFileStorage, limits: { fileSize: 200 * 1024 * 1024 } });
+function partFileFilter(_req, file, cb) {
+  if (file.fieldname === 'previewImage') {
+    const ext = path.extname(fixFilenameEncoding(file.originalname)).toLowerCase();
+    if (!PREVIEW_EXTENSIONS.has(ext)) return cb(new Error(`L'aperçu doit être un png/jpg, reçu : ${ext}`));
+  }
+  cb(null, true);
+}
+const uploadPartFile = multer({ storage: partFileStorage, fileFilter: partFileFilter, limits: { fileSize: 200 * 1024 * 1024 } });
 
-const PART_SELECT_COLUMNS = 'id, machine, name, comment, quantity, brut, status, cad_filename, plan_filename, created_at';
+const PART_SELECT_COLUMNS = 'id, machine, name, comment, quantity, brut, status, cad_path, cad_filename, plan_path, plan_filename, preview_path, created_at';
 
 async function unlinkIfExists(relPath) {
   if (!relPath) return;
@@ -249,16 +256,23 @@ router.patch(
   '/tasks/parts/:partId/cad',
   loadPartForFileEdit,
   ensurePartDirs,
-  uploadPartFile.single('file'),
+  uploadPartFile.fields([
+    { name: 'file', maxCount: 1 },
+    { name: 'previewImage', maxCount: 1 },
+  ]),
   async (req, res) => {
-    if (!req.file) return res.status(400).json({ error: 'Le fichier CAO est obligatoire' });
+    const file = req.files?.file?.[0];
+    const previewImage = req.files?.previewImage?.[0];
+    if (!file) return res.status(400).json({ error: 'Le fichier CAO est obligatoire' });
     const toRelative = (f) => path.relative(UPLOAD_DIR, f.path).split(path.sep).join('/');
-    const fixedName = fixFilenameEncoding(req.file.originalname);
+    const fixedName = fixFilenameEncoding(file.originalname);
     const { rows } = await pool.query(
-      `UPDATE task_parts SET cad_path = $1, cad_filename = $2 WHERE id = $3 RETURNING ${PART_SELECT_COLUMNS}`,
-      [toRelative(req.file), fixedName, req.part.id]
+      `UPDATE task_parts SET cad_path = $1, cad_filename = $2, preview_path = COALESCE($3, preview_path)
+       WHERE id = $4 RETURNING ${PART_SELECT_COLUMNS}`,
+      [toRelative(file), fixedName, previewImage ? toRelative(previewImage) : null, req.part.id]
     );
     await unlinkIfExists(req.part.cad_path);
+    if (previewImage) await unlinkIfExists(req.part.preview_path);
     res.json({ part: rows[0] });
   }
 );

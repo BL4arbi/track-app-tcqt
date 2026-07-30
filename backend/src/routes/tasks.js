@@ -82,7 +82,7 @@ router.get('/:id', async (req, res) => {
     ),
     pool.query(
       `SELECT id, machine, name, comment, quantity, brut, status,
-              cad_filename, plan_filename, created_at
+              cad_path, cad_filename, plan_path, plan_filename, preview_path, created_at
        FROM task_parts WHERE task_id = $1 ORDER BY machine NULLS LAST, created_at`,
       [task.id]
     ),
@@ -260,7 +260,7 @@ router.post('/:id/parts', async (req, res) => {
   const { rows } = await pool.query(
     `INSERT INTO task_parts (task_id, machine, name, comment, quantity, brut, status)
      VALUES ($1, $2, $3, $4, $5, $6, $7)
-     RETURNING id, machine, name, comment, quantity, brut, status, cad_filename, plan_filename, created_at`,
+     RETURNING id, machine, name, comment, quantity, brut, status, cad_path, cad_filename, plan_path, plan_filename, preview_path, created_at`,
     [task.id, machine || null, name, comment || null, qty, brut || null, status || 'a_commander']
   );
   res.status(201).json({ part: rows[0] });
@@ -303,7 +303,7 @@ router.patch('/parts/:partId', loadPartForEdit, async (req, res) => {
   };
   const { rows } = await pool.query(
     `UPDATE task_parts SET machine = $1, name = $2, comment = $3, quantity = $4, brut = $5, status = $6 WHERE id = $7
-     RETURNING id, machine, name, comment, quantity, brut, status, cad_filename, plan_filename, created_at`,
+     RETURNING id, machine, name, comment, quantity, brut, status, cad_path, cad_filename, plan_path, plan_filename, preview_path, created_at`,
     [next.machine, next.name, next.comment, next.quantity, next.brut, next.status, req.part.id]
   );
   res.json({ part: rows[0] });

@@ -29,6 +29,14 @@ const editPartQuantity = ref(1);
 const editPartBrut = ref('');
 const savingPart = ref(false);
 const uploadingPartFileFor = ref(null);
+const viewingPartPlanFor = ref(null);
+
+const cadStagingFor = ref(null);
+const cadStageFile = ref(null);
+const cadStagePreview = ref(null);
+const cadStageGenerating = ref(false);
+const cadStageError = ref('');
+const cadStageUploading = ref(false);
 
 const purchases = ref([]);
 const suppliers = ref([]);
@@ -426,6 +434,19 @@ function partCadUrl(part) {
 function partPlanUrl(part) {
   return `${api.defaults.baseURL}/api/tasks/parts/${part.id}/plan/download`;
 }
+// Static (not the /download route, which forces a save dialog via
+// Content-Disposition: attachment) — opens inline in the browser's own PDF
+// viewer, which has print already built in.
+function partPlanViewUrl(part) {
+  return part.plan_path ? `${api.defaults.baseURL}/uploads/${part.plan_path}` : null;
+}
+function partPreviewUrl(part) {
+  return part.preview_path ? `${api.defaults.baseURL}/uploads/${part.preview_path}` : null;
+}
+
+function togglePartPlan(partId) {
+  viewingPartPlanFor.value = viewingPartPlanFor.value === partId ? null : partId;
+}
 
 async function uploadPartFile(part, kind, file) {
   if (!file) return;
@@ -441,6 +462,70 @@ async function uploadPartFile(part, kind, file) {
     partError.value = e.response?.data?.error || "Échec de l'envoi du fichier";
   } finally {
     uploadingPartFileFor.value = null;
+  }
+}
+
+// Staged CAD attach: pick the file locally, optionally generate a preview
+// from it via SolidWorks (same mechanism as the task documents flow) before
+// uploading both together — necessary because the automation needs a real
+// local file path, which only exists before upload, not after.
+function startCadStage(part) {
+  cadStagingFor.value = part.id;
+  cadStageFile.value = null;
+  cadStagePreview.value = null;
+  cadStageError.value = '';
+}
+function cancelCadStage() {
+  cadStagingFor.value = null;
+}
+
+async function generateCadPreview() {
+  cadStageError.value = '';
+  if (!cadStageFile.value) {
+    cadStageError.value = "Sélectionnez d'abord le fichier CAO";
+    return;
+  }
+  const localPath = window.electronAPI.getPathForFile(cadStageFile.value);
+  if (!localPath) {
+    cadStageError.value = "Impossible de résoudre le chemin du fichier sélectionné";
+    return;
+  }
+  cadStageGenerating.value = true;
+  try {
+    const result = await window.electronAPI.generateSolidWorksPreview(localPath);
+    if (!result.success) {
+      cadStageError.value = result.error || 'Échec de la génération automatique';
+      return;
+    }
+    cadStagePreview.value = new File([base64ToBytes(result.base64)], 'apercu-solidworks.png', { type: 'image/png' });
+    if (result.warning) cadStageError.value = result.warning;
+  } catch (e) {
+    cadStageError.value = e.message || 'Échec de la génération automatique';
+  } finally {
+    cadStageGenerating.value = false;
+  }
+}
+
+async function submitCadStage(part) {
+  cadStageError.value = '';
+  if (!cadStageFile.value) {
+    cadStageError.value = 'Sélectionnez un fichier CAO';
+    return;
+  }
+  cadStageUploading.value = true;
+  const form = new FormData();
+  form.append('file', cadStageFile.value);
+  if (cadStagePreview.value) form.append('previewImage', cadStagePreview.value);
+  try {
+    await api.patch(`/api/tasks/parts/${part.id}/cad`, form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    cadStagingFor.value = null;
+    await load();
+  } catch (e) {
+    cadStageError.value = e.response?.data?.error || "Échec de l'envoi";
+  } finally {
+    cadStageUploading.value = false;
   }
 }
 
@@ -764,24 +849,29 @@ onMounted(load);
                     </select>
                   </td>
                   <td :style="{ textDecoration: p.status === 'fabrique' ? 'line-through' : 'none' }">
-                    {{ p.name }}
-                    <div v-if="p.comment" class="muted">{{ p.comment }}</div>
+                    <div style="display:flex; align-items:center; gap:8px">
+                      <img v-if="partPreviewUrl(p)" :src="partPreviewUrl(p)" class="preview-thumb-sm" :alt="p.name" />
+                      <div>
+                        {{ p.name }}
+                        <div v-if="p.comment" class="muted">{{ p.comment }}</div>
+                      </div>
+                    </div>
                   </td>
                   <td>{{ p.quantity }}</td>
                   <td>{{ p.brut || '—' }}</td>
                   <td style="white-space:nowrap">
                     <a v-if="p.cad_filename" :href="partCadUrl(p)" :title="p.cad_filename">{{ p.cad_filename }}</a>
                     <span v-else class="muted">—</span>
-                    <template v-if="canEdit">
-                      <input type="file" :id="`cad-input-${p.id}`" style="display:none" @change="uploadPartFile(p, 'cad', $event.target.files[0]); $event.target.value = ''" />
-                      <label :for="`cad-input-${p.id}`" class="link-button" style="margin-left:6px; cursor:pointer">
-                        {{ uploadingPartFileFor === `${p.id}-cad` ? '…' : (p.cad_filename ? 'Remplacer' : '+ Ajouter') }}
-                      </label>
-                    </template>
+                    <button v-if="canEdit" type="button" class="link-button" style="margin-left:6px" @click="startCadStage(p)">
+                      {{ p.cad_filename ? 'Remplacer' : '+ Ajouter' }}
+                    </button>
                   </td>
                   <td style="white-space:nowrap">
                     <a v-if="p.plan_filename" :href="partPlanUrl(p)" :title="p.plan_filename">{{ p.plan_filename }}</a>
                     <span v-else class="muted">—</span>
+                    <button v-if="p.plan_filename" type="button" class="link-button" style="margin-left:6px" @click="togglePartPlan(p.id)">
+                      {{ viewingPartPlanFor === p.id ? 'Fermer' : 'Voir / Imprimer' }}
+                    </button>
                     <template v-if="canEdit">
                       <input type="file" :id="`plan-input-${p.id}`" style="display:none" @change="uploadPartFile(p, 'plan', $event.target.files[0]); $event.target.value = ''" />
                       <label :for="`plan-input-${p.id}`" class="link-button" style="margin-left:6px; cursor:pointer">
@@ -794,7 +884,40 @@ onMounted(load);
                     <button v-if="canEdit" type="button" class="link-button" style="color:var(--danger); margin-left:8px" @click="deletePart(p)">Supprimer</button>
                   </td>
                 </tr>
-                <tr v-else>
+                <tr v-if="cadStagingFor === p.id">
+                  <td colspan="7">
+                    <div class="form-row">
+                      <div class="field">
+                        <label style="font-size:13px; font-weight:600">Fichier CAO</label>
+                        <input type="file" @change="cadStageFile = $event.target.files[0]" />
+                      </div>
+                      <div class="field">
+                        <label style="font-size:13px; font-weight:600">Aperçu (facultatif)</label>
+                        <button
+                          v-if="isElectron"
+                          type="button"
+                          class="secondary"
+                          :disabled="!cadStageFile || cadStageGenerating"
+                          @click="generateCadPreview"
+                        >
+                          {{ cadStageGenerating ? 'Génération…' : 'Générer via SolidWorks (bêta)' }}
+                        </button>
+                        <p v-if="cadStagePreview" class="success-text">Aperçu généré ✓</p>
+                      </div>
+                    </div>
+                    <p v-if="cadStageError" class="error-text">{{ cadStageError }}</p>
+                    <div style="display:flex; gap:8px">
+                      <button type="button" :disabled="cadStageUploading" @click="submitCadStage(p)">{{ cadStageUploading ? 'Envoi…' : 'Envoyer' }}</button>
+                      <button type="button" class="secondary" @click="cancelCadStage">Annuler</button>
+                    </div>
+                  </td>
+                </tr>
+                <tr v-if="viewingPartPlanFor === p.id">
+                  <td colspan="7">
+                    <iframe :src="partPlanViewUrl(p)" style="width:100%; height:600px; border:1px solid var(--border); border-radius:8px"></iframe>
+                  </td>
+                </tr>
+                <tr v-if="editingPartId === p.id">
                   <td colspan="7">
                     <div class="form-row">
                       <div class="field">
