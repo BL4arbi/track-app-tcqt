@@ -81,7 +81,7 @@ router.get('/:id', async (req, res) => {
       [task.id]
     ),
     pool.query(
-      `SELECT id, name, comment, done, created_at FROM task_parts WHERE task_id = $1 ORDER BY created_at`,
+      `SELECT id, name, comment, status, created_at FROM task_parts WHERE task_id = $1 ORDER BY created_at`,
       [task.id]
     ),
   ]);
@@ -223,7 +223,9 @@ router.delete('/:id', async (req, res) => {
 });
 
 // Manufactured-parts checklist: in-house elements to build for a task,
-// each with an optional comment and a done flag.
+// each with an optional comment and a procurement/manufacturing status.
+const PART_STATUSES = ['a_commander', 'commande', 'fabrique'];
+
 router.post('/:id/parts', async (req, res) => {
   const { rows: taskRows } = await pool.query('SELECT * FROM tasks WHERE id = $1', [req.params.id]);
   const task = taskRows[0];
@@ -232,12 +234,16 @@ router.post('/:id/parts', async (req, res) => {
   const canEdit = req.user.role === 'manager' || task.assigned_user_id === req.user.id;
   if (!canEdit) return res.status(403).json({ error: "Vous ne pouvez modifier que vos propres tâches" });
 
-  const { name, comment } = req.body || {};
+  const { name, comment, status } = req.body || {};
   if (!name) return res.status(400).json({ error: "Le nom de la pièce est obligatoire" });
+  if (status !== undefined && !PART_STATUSES.includes(status)) {
+    return res.status(400).json({ error: 'Statut de pièce invalide' });
+  }
 
   const { rows } = await pool.query(
-    `INSERT INTO task_parts (task_id, name, comment) VALUES ($1, $2, $3) RETURNING id, name, comment, done, created_at`,
-    [task.id, name, comment || null]
+    `INSERT INTO task_parts (task_id, name, comment, status) VALUES ($1, $2, $3, $4)
+     RETURNING id, name, comment, status, created_at`,
+    [task.id, name, comment || null, status || 'a_commander']
   );
   res.status(201).json({ part: rows[0] });
 });
@@ -258,16 +264,19 @@ async function loadPartForEdit(req, res, next) {
 }
 
 router.patch('/parts/:partId', loadPartForEdit, async (req, res) => {
-  const { name, comment, done } = req.body || {};
+  const { name, comment, status } = req.body || {};
+  if (status !== undefined && !PART_STATUSES.includes(status)) {
+    return res.status(400).json({ error: 'Statut de pièce invalide' });
+  }
   const next = {
     name: name ?? req.part.name,
     comment: comment !== undefined ? (comment || null) : req.part.comment,
-    done: done !== undefined ? Boolean(done) : req.part.done,
+    status: status ?? req.part.status,
   };
   const { rows } = await pool.query(
-    `UPDATE task_parts SET name = $1, comment = $2, done = $3 WHERE id = $4
-     RETURNING id, name, comment, done, created_at`,
-    [next.name, next.comment, next.done, req.part.id]
+    `UPDATE task_parts SET name = $1, comment = $2, status = $3 WHERE id = $4
+     RETURNING id, name, comment, status, created_at`,
+    [next.name, next.comment, next.status, req.part.id]
   );
   res.json({ part: rows[0] });
 });

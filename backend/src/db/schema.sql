@@ -54,15 +54,23 @@ CREATE TABLE IF NOT EXISTS task_history (
 );
 
 -- Elements manufactured in-house for a task (e.g. between "Commande reçu"
--- and "Départ chantier"), with an optional comment per item.
+-- and "Départ chantier"), with an optional comment per item. status tracks
+-- the procurement/manufacturing stage of the raw material/part itself —
+-- 'fabrique' (manufactured) is the final state.
 CREATE TABLE IF NOT EXISTS task_parts (
   id          SERIAL PRIMARY KEY,
   task_id     INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
   name        TEXT NOT NULL,
   comment     TEXT,
   done        BOOLEAN NOT NULL DEFAULT FALSE,
+  status      TEXT NOT NULL DEFAULT 'a_commander' CHECK (status IN ('a_commander', 'commande', 'fabrique')),
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+ALTER TABLE task_parts ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'a_commander';
+-- One-time backfill for rows created before `status` existed: preserve
+-- their prior "done" flag as the equivalent final status.
+UPDATE task_parts SET status = 'fabrique' WHERE done = true AND status = 'a_commander';
 
 CREATE TABLE IF NOT EXISTS documents (
   id                  SERIAL PRIMARY KEY,

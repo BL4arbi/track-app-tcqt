@@ -121,6 +121,8 @@ button.secondary { background: transparent; color: var(--accent); }
 }
 .link-button:hover { text-decoration: underline; }
 
+.back-link { display: inline-block; margin-bottom: 12px; font-size: 14px; font-weight: 600; }
+
 .card {
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -149,6 +151,17 @@ tr:hover td { background: var(--bg-subtle); }
 .badge.active { background: var(--accent-bg); color: var(--accent); }
 .badge.paused { background: rgba(200, 150, 0, 0.15); color: #a67c00; }
 .badge.done { background: rgba(26, 127, 75, 0.15); color: var(--success); }
+
+.part-status-select {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 6px;
+  border-radius: 10px;
+  border: none;
+}
+.part-status-select.a_commander { background: rgba(150, 150, 150, 0.18); color: var(--text); }
+.part-status-select.commande { background: rgba(200, 150, 0, 0.15); color: #a67c00; }
+.part-status-select.fabrique { background: rgba(26, 127, 75, 0.15); color: var(--success); }
 
 .reminder-card { border-color: var(--accent); }
 .reminder-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; font-size: 14px; }

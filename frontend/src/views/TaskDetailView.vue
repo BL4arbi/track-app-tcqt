@@ -61,6 +61,7 @@ const savingReminder = ref(false);
 const reminderError = ref('');
 
 const STATUS_LABELS = { active: 'En cours', paused: 'En pause', done: 'Terminé' };
+const PART_STATUS_LABELS = { a_commander: 'À commander', commande: 'Commandé (non livré)', fabrique: 'Fabriqué' };
 
 function formatDate(iso) {
   return new Date(iso).toLocaleString('fr-FR');
@@ -326,8 +327,8 @@ async function addPart() {
   }
 }
 
-async function togglePartDone(part) {
-  await api.patch(`/api/tasks/parts/${part.id}`, { done: !part.done });
+async function updatePartStatus(part, status) {
+  await api.patch(`/api/tasks/parts/${part.id}`, { status });
   await load();
 }
 
@@ -366,6 +367,8 @@ onMounted(load);
 
 <template>
   <div>
+    <button type="button" class="link-button back-link" @click="router.back()">← Retour</button>
+
     <p v-if="loading" class="muted">Chargement…</p>
     <p v-else-if="error" class="error-text">{{ error }}</p>
 
@@ -529,10 +532,18 @@ onMounted(load);
           <tbody>
             <template v-for="p in parts" :key="p.id">
               <tr v-if="editingPartId !== p.id">
-                <td style="width:1%">
-                  <input type="checkbox" :checked="p.done" :disabled="!canEdit" @change="togglePartDone(p)" />
+                <td style="width:1%; white-space:nowrap">
+                  <select
+                    class="part-status-select"
+                    :class="p.status"
+                    :disabled="!canEdit"
+                    :value="p.status"
+                    @change="updatePartStatus(p, $event.target.value)"
+                  >
+                    <option v-for="(lbl, val) in PART_STATUS_LABELS" :key="val" :value="val">{{ lbl }}</option>
+                  </select>
                 </td>
-                <td :style="{ textDecoration: p.done ? 'line-through' : 'none' }">
+                <td :style="{ textDecoration: p.status === 'fabrique' ? 'line-through' : 'none' }">
                   {{ p.name }}
                   <div v-if="p.comment" class="muted">{{ p.comment }}</div>
                 </td>
