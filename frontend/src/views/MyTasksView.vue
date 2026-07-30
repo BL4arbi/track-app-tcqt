@@ -16,7 +16,7 @@ const deletingId = ref(null);
 const deleteError = ref('');
 
 const newTask = reactive({
-  client_id: '', title: '', current_step: '', due_date: '', final_date: '',
+  client_id: '', title: '', label: '', current_step: '', due_date: '', final_date: '',
   parent_task_id: '', assigned_user_id: auth.user?.id || '',
 });
 const creating = ref(false);
@@ -27,7 +27,12 @@ const STATUS_LABELS = { active: 'En cours', paused: 'En pause', done: 'Terminé'
 const parentOptions = computed(() => (excludeId) => tasks.value.filter((t) => t.id !== excludeId));
 
 const todayKey = new Date().toISOString().slice(0, 10);
-const reminderKey = (t) => t.final_date || t.due_date;
+// final_date, due_date, and a manually-set reminder_date are all "watch
+// this date" signals — surface whichever is soonest.
+const reminderKey = (t) => {
+  const dates = [t.final_date, t.due_date, t.reminder_date].filter(Boolean).sort();
+  return dates[0] || null;
+};
 const overdueTasks = computed(() =>
   tasks.value.filter((t) => t.status === 'active' && reminderKey(t) && reminderKey(t) < todayKey)
 );
@@ -72,6 +77,7 @@ async function createTask() {
     });
     newTask.client_id = '';
     newTask.title = '';
+    newTask.label = '';
     newTask.current_step = '';
     newTask.due_date = '';
     newTask.final_date = '';
@@ -89,6 +95,7 @@ function startEdit(t) {
   editingId.value = t.id;
   Object.assign(editDraft, {
     title: t.title,
+    label: t.label || '',
     current_step: t.current_step || '',
     due_date: t.due_date || '',
     final_date: t.final_date || '',
@@ -161,6 +168,10 @@ onMounted(load);
             <input v-model="newTask.title" placeholder="ex. 26-0142" required />
           </div>
           <div class="field">
+            <label>Titre</label>
+            <input v-model="newTask.label" placeholder="ex. Banc essai XL" />
+          </div>
+          <div class="field">
             <label>Étape actuelle</label>
             <select v-model="newTask.current_step">
               <option value="">—</option>
@@ -206,6 +217,7 @@ onMounted(load);
         <tr>
           <th>Client</th>
           <th>N° d'affaire</th>
+          <th>Titre</th>
           <th>Étape actuelle</th>
           <th>Étape suivante</th>
           <th>Date exéc. chantier</th>
@@ -222,6 +234,7 @@ onMounted(load);
               <RouterLink :to="`/tasks/${t.id}`">{{ t.title }}</RouterLink>
               <div v-if="t.parent_task_id" class="muted">↳ sous-tâche de « {{ t.parent_title }} »</div>
             </td>
+            <td>{{ t.label || '—' }}</td>
             <td>{{ t.current_step || '—' }}</td>
             <td>{{ t.next_step || '—' }}</td>
             <td>{{ t.due_date || '—' }}</td>
@@ -243,6 +256,7 @@ onMounted(load);
           <tr v-else>
             <td>{{ t.client_name }}</td>
             <td><input v-model="editDraft.title" /></td>
+            <td><input v-model="editDraft.label" placeholder="Titre" /></td>
             <td>
               <select v-model="editDraft.current_step">
                 <option value="">—</option>
@@ -265,7 +279,7 @@ onMounted(load);
             </td>
           </tr>
           <tr v-if="editingId === t.id">
-            <td colspan="8" style="border-top:none; padding-top:0">
+            <td colspan="9" style="border-top:none; padding-top:0">
               <div class="form-row">
                 <div class="field">
                   <label style="font-size:13px; font-weight:600">Tâche parente</label>

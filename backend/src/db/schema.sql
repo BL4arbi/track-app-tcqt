@@ -22,11 +22,14 @@ CREATE TABLE IF NOT EXISTS tasks (
   client_id        INTEGER NOT NULL REFERENCES clients(id),
   assigned_user_id INTEGER NOT NULL REFERENCES users(id),
   parent_task_id   INTEGER REFERENCES tasks(id) ON DELETE SET NULL,
-  title            TEXT NOT NULL,
+  title            TEXT NOT NULL, -- "numéro d'affaire"
+  label            TEXT,          -- "titre" — free-text, separate from the business number
+  notes            TEXT,          -- general comment on the task as a whole
   current_step     TEXT,
   next_step        TEXT,
   due_date         DATE,  -- "date exécution chantier"
   final_date       DATE,  -- "date finale"
+  reminder_date    DATE,  -- manually-set reminder, independent of due/final date
   status           TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'paused', 'done')),
   created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at       TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -35,6 +38,9 @@ CREATE TABLE IF NOT EXISTS tasks (
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS due_date DATE;
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS final_date DATE;
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS parent_task_id INTEGER REFERENCES tasks(id) ON DELETE SET NULL;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS label TEXT;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS notes TEXT;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS reminder_date DATE;
 
 CREATE TABLE IF NOT EXISTS task_history (
   id          SERIAL PRIMARY KEY,
@@ -76,6 +82,7 @@ CREATE INDEX IF NOT EXISTS idx_tasks_assigned_user ON tasks(assigned_user_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
 CREATE INDEX IF NOT EXISTS idx_tasks_due_date ON tasks(due_date);
 CREATE INDEX IF NOT EXISTS idx_tasks_final_date ON tasks(final_date);
+CREATE INDEX IF NOT EXISTS idx_tasks_reminder_date ON tasks(reminder_date);
 CREATE INDEX IF NOT EXISTS idx_tasks_parent ON tasks(parent_task_id);
 CREATE INDEX IF NOT EXISTS idx_task_history_task ON task_history(task_id);
 CREATE INDEX IF NOT EXISTS idx_task_parts_task ON task_parts(task_id);

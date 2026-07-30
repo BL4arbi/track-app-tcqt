@@ -18,6 +18,10 @@ const newPartName = ref('');
 const newPartComment = ref('');
 const addingPart = ref(false);
 const partError = ref('');
+const editingPartId = ref(null);
+const editPartName = ref('');
+const editPartComment = ref('');
+const savingPart = ref(false);
 const teamMembers = ref([]);
 const parentOptions = ref([]);
 const loading = ref(true);
@@ -50,6 +54,11 @@ const saveError = ref('');
 
 const deletingTask = ref(false);
 const deleteTaskError = ref('');
+
+const settingReminder = ref(false);
+const reminderDraft = ref('');
+const savingReminder = ref(false);
+const reminderError = ref('');
 
 const STATUS_LABELS = { active: 'En cours', paused: 'En pause', done: 'Terminé' };
 
@@ -106,6 +115,8 @@ async function load() {
 function startEdit() {
   Object.assign(editDraft, {
     title: task.value.title,
+    label: task.value.label || '',
+    notes: task.value.notes || '',
     current_step: task.value.current_step || '',
     due_date: task.value.due_date || '',
     final_date: task.value.final_date || '',
@@ -123,6 +134,8 @@ async function saveEdit() {
   try {
     await api.patch(`/api/tasks/${route.params.id}`, {
       ...editDraft,
+      label: editDraft.label || null,
+      notes: editDraft.notes || null,
       due_date: editDraft.due_date || null,
       final_date: editDraft.final_date || null,
       parent_task_id: editDraft.parent_task_id || null,
@@ -133,6 +146,37 @@ async function saveEdit() {
     saveError.value = e.response?.data?.error || "Échec de l'enregistrement";
   } finally {
     saving.value = false;
+  }
+}
+
+function startSetReminder() {
+  reminderDraft.value = task.value.reminder_date || '';
+  reminderError.value = '';
+  settingReminder.value = true;
+}
+
+async function saveReminder() {
+  savingReminder.value = true;
+  reminderError.value = '';
+  try {
+    await api.patch(`/api/tasks/${route.params.id}`, { reminder_date: reminderDraft.value || null });
+    settingReminder.value = false;
+    await load();
+  } catch (e) {
+    reminderError.value = e.response?.data?.error || "Échec de l'enregistrement du rappel";
+  } finally {
+    savingReminder.value = false;
+  }
+}
+
+async function clearReminder() {
+  savingReminder.value = true;
+  try {
+    await api.patch(`/api/tasks/${route.params.id}`, { reminder_date: null });
+    settingReminder.value = false;
+    await load();
+  } finally {
+    savingReminder.value = false;
   }
 }
 
@@ -293,6 +337,30 @@ async function deletePart(part) {
   await load();
 }
 
+function startEditPart(part) {
+  editingPartId.value = part.id;
+  editPartName.value = part.name;
+  editPartComment.value = part.comment || '';
+}
+
+function cancelEditPart() {
+  editingPartId.value = null;
+}
+
+async function saveEditPart(partId) {
+  savingPart.value = true;
+  try {
+    await api.patch(`/api/tasks/parts/${partId}`, {
+      name: editPartName.value.trim(),
+      comment: editPartComment.value.trim() || null,
+    });
+    editingPartId.value = null;
+    await load();
+  } finally {
+    savingPart.value = false;
+  }
+}
+
 onMounted(load);
 </script>
 
@@ -303,7 +371,10 @@ onMounted(load);
 
     <template v-else-if="task">
       <div class="toolbar">
-        <h1>{{ task.title }}</h1>
+        <div>
+          <h1 style="margin-bottom:2px">{{ task.title }}</h1>
+          <div v-if="task.label" class="muted" style="font-size:15px">{{ task.label }}</div>
+        </div>
         <div style="display:flex; gap:10px; align-items:center">
           <span class="badge" :class="task.status">{{ statusLabel(task.status) }}</span>
           <button v-if="canEdit && !editing" class="secondary" @click="startEdit">Modifier</button>
@@ -349,6 +420,28 @@ onMounted(load);
             <strong>Tâche parente :</strong>
             <RouterLink :to="`/tasks/${task.parent_task_id}`">{{ task.parent_title }}</RouterLink>
           </p>
+          <div v-if="task.notes" style="margin:12px 0">
+            <strong>Notes :</strong>
+            <div class="muted" style="white-space:pre-wrap; margin-top:4px">{{ task.notes }}</div>
+          </div>
+
+          <div style="margin:12px 0">
+            <strong>Rappel :</strong>
+            <span v-if="!settingReminder">
+              {{ task.reminder_date ? formatDueDate(task.reminder_date) : '—' }}
+              <button v-if="canEdit" type="button" class="link-button" @click="startSetReminder">
+                {{ task.reminder_date ? 'Modifier' : 'Définir un rappel' }}
+              </button>
+            </span>
+            <span v-else style="display:inline-flex; gap:8px; align-items:center">
+              <input v-model="reminderDraft" type="date" />
+              <button type="button" :disabled="savingReminder" @click="saveReminder">Enregistrer</button>
+              <button v-if="task.reminder_date" type="button" class="secondary" :disabled="savingReminder" @click="clearReminder">Supprimer</button>
+              <button type="button" class="secondary" @click="settingReminder = false">Annuler</button>
+            </span>
+            <p v-if="reminderError" class="error-text">{{ reminderError }}</p>
+          </div>
+
           <p class="muted">Dernière mise à jour {{ formatDate(task.updated_at) }}</p>
         </template>
 
@@ -359,12 +452,22 @@ onMounted(load);
               <input v-model="editDraft.title" required />
             </div>
             <div class="field">
+              <label>Titre</label>
+              <input v-model="editDraft.label" placeholder="ex. Banc essai XL" />
+            </div>
+            <div class="field">
               <label>Statut</label>
               <select v-model="editDraft.status">
                 <option value="active">En cours</option>
                 <option value="paused">En pause</option>
                 <option value="done">Terminé</option>
               </select>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="field" style="flex:1">
+              <label>Notes</label>
+              <textarea v-model="editDraft.notes" rows="3" placeholder="Commentaire général sur la tâche"></textarea>
             </div>
           </div>
           <div class="form-row">
@@ -424,18 +527,39 @@ onMounted(load);
         <div v-if="!parts.length" class="muted">Aucune pièce à fabriquer en interne pour l'instant.</div>
         <table v-else>
           <tbody>
-            <tr v-for="p in parts" :key="p.id">
-              <td style="width:1%">
-                <input type="checkbox" :checked="p.done" :disabled="!canEdit" @change="togglePartDone(p)" />
-              </td>
-              <td :style="{ textDecoration: p.done ? 'line-through' : 'none' }">
-                {{ p.name }}
-                <div v-if="p.comment" class="muted">{{ p.comment }}</div>
-              </td>
-              <td style="text-align:right">
-                <button v-if="canEdit" type="button" class="link-button" style="color:var(--danger)" @click="deletePart(p)">Supprimer</button>
-              </td>
-            </tr>
+            <template v-for="p in parts" :key="p.id">
+              <tr v-if="editingPartId !== p.id">
+                <td style="width:1%">
+                  <input type="checkbox" :checked="p.done" :disabled="!canEdit" @change="togglePartDone(p)" />
+                </td>
+                <td :style="{ textDecoration: p.done ? 'line-through' : 'none' }">
+                  {{ p.name }}
+                  <div v-if="p.comment" class="muted">{{ p.comment }}</div>
+                </td>
+                <td style="text-align:right; white-space:nowrap">
+                  <button v-if="canEdit" type="button" class="link-button" @click="startEditPart(p)">Modifier</button>
+                  <button v-if="canEdit" type="button" class="link-button" style="color:var(--danger); margin-left:8px" @click="deletePart(p)">Supprimer</button>
+                </td>
+              </tr>
+              <tr v-else>
+                <td colspan="3">
+                  <div class="form-row">
+                    <div class="field">
+                      <label style="font-size:13px; font-weight:600">Pièce à fabriquer</label>
+                      <input v-model="editPartName" />
+                    </div>
+                    <div class="field">
+                      <label style="font-size:13px; font-weight:600">Commentaire</label>
+                      <input v-model="editPartComment" placeholder="(facultatif)" />
+                    </div>
+                  </div>
+                  <div style="display:flex; gap:8px">
+                    <button type="button" :disabled="savingPart" @click="saveEditPart(p.id)">Enregistrer</button>
+                    <button type="button" class="secondary" @click="cancelEditPart">Annuler</button>
+                  </div>
+                </td>
+              </tr>
+            </template>
           </tbody>
         </table>
         <form v-if="canEdit" @submit.prevent="addPart" style="margin-top:12px">
