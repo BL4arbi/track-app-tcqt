@@ -51,11 +51,12 @@ router.post('/signup', async (req, res) => {
   res.status(201).json({ message: "Compte créé. Vérifiez votre email pour activer votre compte.", user });
 });
 
-// Hit directly from the email link (not the frontend) — a plain GET the
-// backend can fully handle itself, so verifying an account never depends
-// on the frontend/desktop app being installed or running anywhere.
-function verifyResultPage({ ok, message }) {
-  const loginLink = process.env.APP_BASE_URL ? `${process.env.APP_BASE_URL}/#/login` : null;
+// Hit directly from the email link (not the frontend) — a plain GET/POST the
+// backend can fully handle itself, so these never depend on the
+// frontend/desktop app (a separate process, not always running, and with no
+// permanent web address to link to from an email — the dev server port
+// isn't a real production endpoint) being installed or running anywhere.
+function resultPage({ ok, message }) {
   return `<!doctype html>
 <html lang="fr"><head><meta charset="utf-8"><title>SolidWorks Tracker</title>
 <style>
@@ -64,27 +65,53 @@ function verifyResultPage({ ok, message }) {
   .card { max-width: 420px; padding: 32px; border: 1px solid #e2e1e6; border-radius: 8px; background: #fff; text-align: center; }
   h1 { font-size: 18px; margin: 0 0 12px; }
   p { margin: 0 0 16px; color: ${ok ? '#1a7f4b' : '#c0362c'}; }
-  a { color: #6c3bff; }
 </style></head>
 <body><div class="card">
   <h1>SolidWorks Team Tracker</h1>
   <p>${message}</p>
-  ${loginLink ? `<a href="${loginLink}">Aller à la connexion</a>` : ''}
+  ${ok ? '<p style="color:#08060d">Vous pouvez fermer cette page et retourner à l’application.</p>' : ''}
+</div></body></html>`;
+}
+
+function resetPasswordFormPage({ token, error }) {
+  return `<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><title>SolidWorks Tracker</title>
+<style>
+  body { font-family: system-ui, sans-serif; display: flex; align-items: center; justify-content: center;
+         min-height: 100vh; margin: 0; background: #f7f7f9; color: #08060d; }
+  .card { max-width: 380px; width: 100%; padding: 32px; border: 1px solid #e2e1e6; border-radius: 8px; background: #fff; }
+  h1 { font-size: 18px; margin: 0 0 16px; text-align: center; }
+  label { display: block; font-size: 13px; font-weight: 600; margin: 12px 0 4px; }
+  input { width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid #e2e1e6; border-radius: 6px; font: inherit; }
+  button { width: 100%; margin-top: 20px; padding: 10px; border: none; border-radius: 6px; background: #c8102e; color: #fff; font-weight: 600; font-size: 14px; cursor: pointer; }
+  .error { color: #c0362c; font-size: 13px; margin: 8px 0 0; }
+</style></head>
+<body><div class="card">
+  <h1>Réinitialiser le mot de passe</h1>
+  <form method="POST" action="/api/auth/reset-password">
+    <input type="hidden" name="token" value="${token}" />
+    <label>Nouveau mot de passe</label>
+    <input type="password" name="new_password" minlength="8" required />
+    <label>Confirmer le mot de passe</label>
+    <input type="password" name="confirm_password" minlength="8" required />
+    ${error ? `<p class="error">${error}</p>` : ''}
+    <button type="submit">Réinitialiser</button>
+  </form>
 </div></body></html>`;
 }
 
 router.get('/verify-email', async (req, res) => {
   const { token } = req.query;
   if (!token) {
-    return res.status(400).send(verifyResultPage({ ok: false, message: 'Jeton manquant.' }));
+    return res.status(400).send(resultPage({ ok: false, message: 'Jeton manquant.' }));
   }
   try {
     const payload = verifyToken(token);
     if (payload.purpose !== 'verify_email') throw new Error('wrong purpose');
     await pool.query('UPDATE users SET email_verified = TRUE WHERE id = $1', [payload.sub]);
-    res.send(verifyResultPage({ ok: true, message: 'Email vérifié. Vous pouvez maintenant vous connecter.' }));
+    res.send(resultPage({ ok: true, message: 'Email vérifié. Vous pouvez maintenant vous connecter.' }));
   } catch {
-    res.status(400).send(verifyResultPage({ ok: false, message: 'Lien de vérification invalide ou expiré.' }));
+    res.status(400).send(resultPage({ ok: false, message: 'Lien de vérification invalide ou expiré.' }));
   }
 });
 
@@ -129,18 +156,46 @@ router.post('/forgot-password', async (req, res) => {
   res.json({ message: "Si cet email correspond à un compte, un lien de réinitialisation a été envoyé." });
 });
 
+// Hit directly from the email link, same reasoning as verify-email above —
+// serves its own form, no frontend dependency. Unlike verify-email this
+// needs actual input (the new password), so GET renders the form and POST
+// (submitted by that same form, application/x-www-form-urlencoded) handles
+// it — both fully self-contained on the backend.
+router.get('/reset-password', (req, res) => {
+  const { token } = req.query;
+  if (!token) return res.status(400).send(resultPage({ ok: false, message: 'Jeton manquant.' }));
+  try {
+    const payload = verifyToken(token);
+    if (payload.purpose !== 'reset_password') throw new Error('wrong purpose');
+  } catch {
+    return res.status(400).send(resultPage({ ok: false, message: 'Lien de réinitialisation invalide ou expiré.' }));
+  }
+  res.send(resetPasswordFormPage({ token }));
+});
+
 router.post('/reset-password', async (req, res) => {
-  const { token, new_password } = req.body || {};
-  if (!token || !new_password) return res.status(400).json({ error: "Le jeton et le nouveau mot de passe sont obligatoires" });
-  if (new_password.length < 8) return res.status(400).json({ error: "Le mot de passe doit contenir au moins 8 caractères" });
+  const { token, new_password, confirm_password } = req.body || {};
+  const isFormSubmit = confirm_password !== undefined;
+
+  const fail = (message) => {
+    if (isFormSubmit) return res.status(400).send(resetPasswordFormPage({ token, error: message }));
+    return res.status(400).json({ error: message });
+  };
+
+  if (!token || !new_password) return fail('Le jeton et le nouveau mot de passe sont obligatoires');
+  if (new_password.length < 8) return fail('Le mot de passe doit contenir au moins 8 caractères');
+  if (isFormSubmit && new_password !== confirm_password) return fail('Les mots de passe ne correspondent pas');
+
   try {
     const payload = verifyToken(token);
     if (payload.purpose !== 'reset_password') throw new Error('wrong purpose');
     const password_hash = await bcrypt.hash(new_password, 10);
     await pool.query('UPDATE users SET password_hash = $1 WHERE id = $2', [password_hash, payload.sub]);
-    res.json({ message: "Mot de passe mis à jour. Vous pouvez maintenant vous connecter." });
+    const message = 'Mot de passe mis à jour. Vous pouvez maintenant vous connecter.';
+    if (isFormSubmit) return res.send(resultPage({ ok: true, message }));
+    res.json({ message });
   } catch {
-    res.status(400).json({ error: "Lien de réinitialisation invalide ou expiré" });
+    fail('Lien de réinitialisation invalide ou expiré');
   }
 });
 

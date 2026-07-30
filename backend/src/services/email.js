@@ -35,8 +35,9 @@ export function verificationEmail(token) {
   // Points at the backend directly, not the frontend: verifying is a pure
   // one-click confirmation with no further input needed, so the backend can
   // just do it and return a confirmation page itself — no dependency on the
-  // frontend (a separate process/server) being up at all. Password reset
-  // still needs the frontend, since it requires a form.
+  // frontend (a separate process with no permanent web address) being up
+  // at all. Password reset (below) needs a form, but the backend now
+  // serves that itself too, for the same reason.
   const link = `${process.env.API_BASE_URL}/api/auth/verify-email?token=${token}`;
   return {
     subject: 'Vérifiez votre compte SolidWorks Tracker',
@@ -47,7 +48,11 @@ export function verificationEmail(token) {
 }
 
 export function resetPasswordEmail(token) {
-  const link = `${process.env.APP_BASE_URL}/#/reset-password?token=${token}`;
+  // Points at the backend directly, same as verify-email — the frontend has
+  // no permanent address an email link can reach (the dev server port isn't
+  // a real production endpoint, and the packaged desktop app isn't a web
+  // server at all), so the backend now serves its own reset form.
+  const link = `${process.env.API_BASE_URL}/api/auth/reset-password?token=${token}`;
   return {
     subject: 'Réinitialisation de votre mot de passe SolidWorks Tracker',
     html: `<p>Cliquez sur le lien ci-dessous pour réinitialiser votre mot de passe :</p>
