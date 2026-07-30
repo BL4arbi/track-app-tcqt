@@ -105,21 +105,37 @@ const PURCHASE_STATUS_LABELS = {
 };
 const NO_MACHINE = '— Sans machine —';
 
-// Parts are ordered by machine from the backend (NULLS LAST) — group them
-// into sections here for display, matching the team's own spreadsheet
-// layout (a header row per machine, its pieces listed under it).
+// Group pieces by machine for display, matching the team's own spreadsheet
+// layout (a header row per machine, its pieces listed under it). Grouped by
+// a normalized (trimmed, lowercased) key via a Map rather than by scanning
+// for adjacent matching rows — the backend's sort order alone can't be
+// trusted to keep every spelling/casing variant of the same machine name
+// next to each other, so relying on adjacency silently split one machine
+// into several groups whenever it wasn't typed identically every time.
 const partsByMachine = computed(() => {
-  const groups = [];
-  let current = null;
+  const groups = new Map();
   for (const p of parts.value) {
-    const key = p.machine || NO_MACHINE;
-    if (!current || current.machine !== key) {
-      current = { machine: key, items: [] };
-      groups.push(current);
-    }
-    current.items.push(p);
+    const raw = (p.machine || '').trim();
+    const key = raw.toLowerCase();
+    if (!groups.has(key)) groups.set(key, { machine: raw || NO_MACHINE, items: [] });
+    groups.get(key).items.push(p);
   }
-  return groups;
+  const result = [...groups.values()];
+  const noMachineIndex = result.findIndex((g) => g.machine === NO_MACHINE);
+  if (noMachineIndex > -1) result.push(...result.splice(noMachineIndex, 1));
+  return result;
+});
+
+// Suggestions for the machine input (datalist) — every distinct machine
+// name already used on this task, so re-adding pieces to the same machine
+// doesn't depend on retyping it identically.
+const knownMachines = computed(() => {
+  const seen = new Map();
+  for (const p of parts.value) {
+    const raw = (p.machine || '').trim();
+    if (raw && !seen.has(raw.toLowerCase())) seen.set(raw.toLowerCase(), raw);
+  }
+  return [...seen.values()];
 });
 
 function formatDate(iso) {
@@ -389,7 +405,9 @@ async function addPart() {
       quantity: newPartQuantity.value || 1,
       brut: newPartBrut.value.trim() || null,
     });
-    newPartMachine.value = '';
+    // Machine is deliberately NOT cleared — adding several pieces to the
+    // same machine one after another (the normal workflow, per the
+    // spreadsheet) shouldn't require retyping it every time.
     newPartName.value = '';
     newPartComment.value = '';
     newPartQuantity.value = 1;
@@ -494,7 +512,7 @@ async function addPurchase() {
       ref: newPurchaseRef.value.trim() || null,
       supplier_id,
     });
-    newPurchaseMachine.value = '';
+    // Same reasoning as the parts form — keep Machine sticky.
     newPurchaseDescription.value = '';
     newPurchaseQuantity.value = 1;
     newPurchaseRef.value = '';
@@ -781,7 +799,7 @@ onMounted(load);
                     <div class="form-row">
                       <div class="field">
                         <label style="font-size:13px; font-weight:600">Machine</label>
-                        <input v-model="editPartMachine" placeholder="ex. MACHINE ORBITALE 8" />
+                        <input v-model="editPartMachine" list="machine-suggestions" placeholder="ex. MACHINE ORBITALE 8" />
                       </div>
                       <div class="field">
                         <label style="font-size:13px; font-weight:600">Pièce à fabriquer</label>
@@ -816,7 +834,10 @@ onMounted(load);
           <div class="form-row">
             <div class="field">
               <label>Machine</label>
-              <input v-model="newPartMachine" placeholder="ex. MACHINE ORBITALE 8" />
+              <input v-model="newPartMachine" list="machine-suggestions" placeholder="ex. MACHINE ORBITALE 8" />
+              <datalist id="machine-suggestions">
+                <option v-for="m in knownMachines" :key="m" :value="m" />
+              </datalist>
             </div>
             <div class="field">
               <label>Pièce à fabriquer</label>
@@ -921,7 +942,7 @@ onMounted(load);
             </div>
             <div class="field">
               <label>Machine (facultatif)</label>
-              <input v-model="newPurchaseMachine" placeholder="ex. MACHINE ORBITALE 8" />
+              <input v-model="newPurchaseMachine" list="machine-suggestions" placeholder="ex. MACHINE ORBITALE 8" />
             </div>
             <div class="field">
               <label>Qté</label>
