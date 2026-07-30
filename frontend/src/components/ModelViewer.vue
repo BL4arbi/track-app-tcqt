@@ -39,6 +39,12 @@ const arrowStyles = {
   down: { top: `${cubeTop + CUBE_SIZE + ARROW_GAP}px`, right: `${cubeRight + cubeCenterOffset}px` },
   left: { top: `${cubeTop + cubeCenterOffset}px`, right: `${cubeRight + CUBE_SIZE + ARROW_GAP}px` },
   right: { top: `${cubeTop + cubeCenterOffset}px`, right: `${WIDGET_MARGIN}px` },
+  // Diagonal steppers sit at the 4 outer corners of the arrow cross, where
+  // the up/down row meets the left/right column.
+  ne: { top: `${WIDGET_MARGIN}px`, right: `${WIDGET_MARGIN}px` },
+  nw: { top: `${WIDGET_MARGIN}px`, right: `${cubeRight + CUBE_SIZE + ARROW_GAP}px` },
+  se: { top: `${cubeTop + CUBE_SIZE + ARROW_GAP}px`, right: `${WIDGET_MARGIN}px` },
+  sw: { top: `${cubeTop + CUBE_SIZE + ARROW_GAP}px`, right: `${cubeRight + CUBE_SIZE + ARROW_GAP}px` },
 };
 
 let cubeScene, cubeCamera, cubeMesh;
@@ -51,25 +57,54 @@ const FACE_DEFS = [
   { label: 'ARRIÈRE', dir: [0, 0, -1] },
 ];
 
+// A 3x3 grid is drawn on each face as a visual hint for the picking
+// regions: the center cell snaps straight to that face, the 4 edge cells
+// snap to a 2-axis diagonal (an edge of the real cube), and the 4 corner
+// cells snap to a 3-axis diagonal (a corner) — see classifyCubeHit().
 function makeFaceTexture(label) {
+  const S = 256;
   const canvas = document.createElement('canvas');
-  canvas.width = 128;
-  canvas.height = 128;
+  canvas.width = S;
+  canvas.height = S;
   const ctx = canvas.getContext('2d');
-  ctx.fillStyle = '#e9eaf0';
-  ctx.fillRect(0, 0, 128, 128);
-  ctx.strokeStyle = '#9aa0b3';
-  ctx.lineWidth = 4;
-  ctx.strokeRect(2, 2, 124, 124);
-  ctx.fillStyle = '#3d3a45';
-  ctx.font = '700 18px system-ui, sans-serif';
+
+  const gradient = ctx.createLinearGradient(0, 0, S, S);
+  gradient.addColorStop(0, '#f4f5f8');
+  gradient.addColorStop(1, '#d7d9e2');
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, S, S);
+
+  const cell = S / 3;
+  ctx.strokeStyle = 'rgba(61, 58, 69, 0.22)';
+  ctx.lineWidth = 2;
+  for (let i = 1; i < 3; i++) {
+    ctx.beginPath();
+    ctx.moveTo(cell * i, 0);
+    ctx.lineTo(cell * i, S);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(0, cell * i);
+    ctx.lineTo(S, cell * i);
+    ctx.stroke();
+  }
+
+  ctx.strokeStyle = '#c8102e';
+  ctx.lineWidth = 5;
+  ctx.strokeRect(2.5, 2.5, S - 5, S - 5);
+
+  ctx.fillStyle = '#2b2d38';
+  ctx.font = `700 ${S * 0.14}px system-ui, sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText(label, 64, 64);
+  ctx.fillText(label, S / 2, S / 2);
+
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = 4;
   return texture;
 }
+
+const CUBE_HALF = 0.8;
 
 function setupCube() {
   cubeScene = new THREE.Scene();
@@ -79,8 +114,28 @@ function setupCube() {
   cubeScene.add(new THREE.AmbientLight(0xffffff, 1));
 
   const materials = FACE_DEFS.map((f) => new THREE.MeshBasicMaterial({ map: makeFaceTexture(f.label) }));
-  cubeMesh = new THREE.Mesh(new THREE.BoxGeometry(1.6, 1.6, 1.6), materials);
+  cubeMesh = new THREE.Mesh(new THREE.BoxGeometry(CUBE_HALF * 2, CUBE_HALF * 2, CUBE_HALF * 2), materials);
   cubeScene.add(cubeMesh);
+}
+
+// A "real" 26-target cube (like SolidWorks'): 6 faces + 12 edges + 8
+// corners. Works off the hit point in the cube's own local geometry space
+// (via worldToLocal, which correctly undoes whatever display rotation is
+// currently applied) rather than materialIndex, which alone only ever
+// gives 6 possible directions. Any axis where the local coordinate is past
+// the threshold counts as "active"; combining every active axis' sign
+// gives the face (1 active axis), edge (2), or corner (3) direction.
+function classifyCubeHit(hit) {
+  const local = cubeMesh.worldToLocal(hit.point.clone());
+  // Matches the 3x3 grid lines drawn on the face texture exactly (each face
+  // spans -CUBE_HALF..CUBE_HALF, divided into 3 equal thirds).
+  const threshold = CUBE_HALF / 3;
+  const dir = new THREE.Vector3();
+  for (const axis of ['x', 'y', 'z']) {
+    if (Math.abs(local[axis]) > threshold) dir[axis] = Math.sign(local[axis]);
+  }
+  if (dir.lengthSq() === 0) dir.set(...FACE_DEFS[hit.face.materialIndex].dir);
+  return dir.normalize();
 }
 
 function cubeViewport(clientWidth, clientHeight) {
@@ -110,6 +165,10 @@ function rotateViewUp() { rotateView(-Math.PI / 2, 0); }
 function rotateViewDown() { rotateView(Math.PI / 2, 0); }
 function rotateViewLeft() { rotateView(0, -Math.PI / 2); }
 function rotateViewRight() { rotateView(0, Math.PI / 2); }
+function rotateViewNE() { rotateView(-Math.PI / 2, Math.PI / 2); }
+function rotateViewNW() { rotateView(-Math.PI / 2, -Math.PI / 2); }
+function rotateViewSE() { rotateView(Math.PI / 2, Math.PI / 2); }
+function rotateViewSW() { rotateView(Math.PI / 2, -Math.PI / 2); }
 
 // SolidWorks-style: clicking a face snaps the view to it, but dragging the
 // cube free-orbits the model just like dragging anywhere else on the
@@ -156,9 +215,8 @@ function onCanvasPointerUp(event) {
   const hit = raycaster.intersectObject(cubeMesh)[0];
   if (!hit) return;
 
-  const face = FACE_DEFS[hit.face.materialIndex];
+  const dir = classifyCubeHit(hit);
   const distance = camera.position.distanceTo(controls.target);
-  const dir = new THREE.Vector3(...face.dir).normalize();
   camera.position.copy(controls.target).addScaledVector(dir, distance);
   camera.up.set(0, 1, 0);
   camera.lookAt(controls.target);
@@ -319,6 +377,10 @@ onBeforeUnmount(() => {
       <button type="button" class="cube-arrow" :style="arrowStyles.down" title="Tourner vers le bas" @click="rotateViewDown">▼</button>
       <button type="button" class="cube-arrow" :style="arrowStyles.left" title="Tourner vers la gauche" @click="rotateViewLeft">◀</button>
       <button type="button" class="cube-arrow" :style="arrowStyles.right" title="Tourner vers la droite" @click="rotateViewRight">▶</button>
+      <button type="button" class="cube-arrow cube-arrow--diag" :style="arrowStyles.ne" title="Diagonale haut-droite" @click="rotateViewNE">↗</button>
+      <button type="button" class="cube-arrow cube-arrow--diag" :style="arrowStyles.nw" title="Diagonale haut-gauche" @click="rotateViewNW">↖</button>
+      <button type="button" class="cube-arrow cube-arrow--diag" :style="arrowStyles.se" title="Diagonale bas-droite" @click="rotateViewSE">↘</button>
+      <button type="button" class="cube-arrow cube-arrow--diag" :style="arrowStyles.sw" title="Diagonale bas-gauche" @click="rotateViewSW">↙</button>
     </template>
   </div>
 </template>
@@ -352,13 +414,22 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1;
   color: var(--text);
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 50%;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
   cursor: pointer;
+  transition: background 0.12s, color 0.12s, transform 0.12s;
 }
-.cube-arrow:hover { background: var(--accent-bg); color: var(--accent); border-color: var(--accent); }
+.cube-arrow--diag { font-size: 11px; opacity: 0.85; }
+.cube-arrow:hover {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+  transform: scale(1.12);
+  opacity: 1;
+}
 </style>
