@@ -87,7 +87,22 @@ export async function generateSolidWorksPreview(nativeFilePath) {
 
   const ext = path.extname(nativeFilePath).toLowerCase();
   if (!SUPPORTED_EXTENSIONS.has(ext)) {
-    return { success: false, error: `Type de fichier non pris en charge pour la génération auto : ${ext}` };
+    // Confirmed live against a real SolidWorks install: neutral exchange
+    // formats (STEP/IGES/...) can't be driven the same way. OpenDoc just
+    // returns Nothing for a .step file with no error at all, and OpenDoc6
+    // (which has the Errors/Warnings output STEP import needs) fails with
+    // "Type incompatible" on this VBScript/COM setup regardless of file
+    // type — the same pre-existing bug documented for native files. Rather
+    // than silently fail, tell the user the file can still be attached as
+    // a plain document; they just don't get an auto-generated preview
+    // unless it's converted to a native SolidWorks file first.
+    return {
+      success: false,
+      error: `Génération auto non disponible pour ce type de fichier (${ext}) — seuls les fichiers natifs ` +
+        "SolidWorks (.sldprt / .sldasm / .slddrw) le permettent. Vous pouvez quand même envoyer ce fichier " +
+        "normalement (bouton Envoyer, sans générer d'aperçu), ou l'ouvrir dans SolidWorks et l'enregistrer " +
+        "en .sldprt pour pouvoir générer un aperçu automatique.",
+    };
   }
 
   const scriptPath = resolveExternallyReadablePath(path.join(__dirname, 'solidworks-preview.vbs'));
