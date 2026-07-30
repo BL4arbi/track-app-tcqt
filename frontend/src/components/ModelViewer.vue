@@ -15,8 +15,8 @@ let renderer, scene, camera, controls, mesh, edges, animationId, resizeObserver;
 // Orientation cube (top-right corner): a small independent scene rendered
 // via a scissored sub-viewport of the same renderer, rotated in sync with
 // the main camera every frame so it always shows the current viewing
-// direction. Click a face to snap the main camera to look straight at it —
-// this is the "square that decides which face you're looking at".
+// direction. Click a face to snap the main camera to look straight at it,
+// or drag the cube to free-orbit the model — same as SolidWorks' cube.
 const CUBE_SIZE = 84;
 const CUBE_MARGIN = 10;
 let cubeScene, cubeCamera, cubeMesh;
@@ -69,23 +69,48 @@ function cubeViewport(clientWidth, clientHeight) {
   };
 }
 
-function onCanvasPointerDown(event) {
-  if (!container.value || !mesh) return;
-  const rect = renderer.domElement.getBoundingClientRect();
+// SolidWorks-style: clicking a face snaps the view to it, but dragging the
+// cube free-orbits the model just like dragging anywhere else on the
+// canvas. Since OrbitControls only ever reacts to pointer movement deltas
+// (it doesn't care where the drag started), the simplest way to get that
+// drag-to-orbit behavior on the cube is to just let OrbitControls see the
+// same pointerdown too — no `stopPropagation`. The face-snap only fires on
+// pointerup, and only if the pointer barely moved since pointerdown (a
+// real click, not a drag that OrbitControls already handled).
+const CLICK_MOVE_THRESHOLD = 5;
+let cubePointerDownAt = null;
+
+function pointerToCubeNdc(event, rect) {
   const px = event.clientX - rect.left;
   const py = event.clientY - rect.top;
   const { x: vx, y: vy, size } = cubeViewport(rect.width, rect.height);
   // Viewport y is bottom-up (WebGL convention), pointer y is top-down.
   const cubeTop = rect.height - vy - size;
-  if (px < vx || px > vx + size || py < cubeTop || py > cubeTop + size) return;
+  if (px < vx || px > vx + size || py < cubeTop || py > cubeTop + size) return null;
+  return {
+    x: ((px - vx) / size) * 2 - 1,
+    y: -(((py - cubeTop) / size) * 2 - 1),
+  };
+}
 
-  // This click belongs to the cube, not the orbit controls.
-  event.stopPropagation();
+function onCanvasPointerDown(event) {
+  if (!container.value || !mesh) return;
+  const rect = renderer.domElement.getBoundingClientRect();
+  cubePointerDownAt = pointerToCubeNdc(event, rect) ? { x: event.clientX, y: event.clientY } : null;
+}
 
-  const ndcX = ((px - vx) / size) * 2 - 1;
-  const ndcY = -(((py - cubeTop) / size) * 2 - 1);
+function onCanvasPointerUp(event) {
+  if (!cubePointerDownAt) return;
+  const moved = Math.hypot(event.clientX - cubePointerDownAt.x, event.clientY - cubePointerDownAt.y);
+  cubePointerDownAt = null;
+  if (moved > CLICK_MOVE_THRESHOLD) return; // was a drag — OrbitControls already orbited the view
+
+  const rect = renderer.domElement.getBoundingClientRect();
+  const ndc = pointerToCubeNdc(event, rect);
+  if (!ndc) return;
+
   const raycaster = new THREE.Raycaster();
-  raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), cubeCamera);
+  raycaster.setFromCamera(new THREE.Vector2(ndc.x, ndc.y), cubeCamera);
   const hit = raycaster.intersectObject(cubeMesh)[0];
   if (!hit) return;
 
@@ -214,9 +239,8 @@ onMounted(() => {
   controls.enableDamping = true;
 
   setupCube();
-  // Capture phase so a click on the cube is intercepted before OrbitControls
-  // (registered below, bubble phase) treats it as the start of a drag.
-  renderer.domElement.addEventListener('pointerdown', onCanvasPointerDown, true);
+  renderer.domElement.addEventListener('pointerdown', onCanvasPointerDown);
+  window.addEventListener('pointerup', onCanvasPointerUp);
 
   resize();
   loadModel(props.modelUrl);
@@ -231,7 +255,8 @@ watch(() => props.modelUrl, (url) => loadModel(url));
 onBeforeUnmount(() => {
   cancelAnimationFrame(animationId);
   resizeObserver?.disconnect();
-  renderer?.domElement.removeEventListener('pointerdown', onCanvasPointerDown, true);
+  renderer?.domElement.removeEventListener('pointerdown', onCanvasPointerDown);
+  window.removeEventListener('pointerup', onCanvasPointerUp);
   clearMesh();
   controls?.dispose();
   renderer?.dispose();
