@@ -862,8 +862,14 @@ onMounted(load);
                   <td style="white-space:nowrap">
                     <a v-if="p.cad_filename" :href="partCadUrl(p)" :title="p.cad_filename">{{ p.cad_filename }}</a>
                     <span v-else class="muted">—</span>
-                    <button v-if="canEdit" type="button" class="link-button" style="margin-left:6px" @click="startCadStage(p)">
-                      {{ p.cad_filename ? 'Remplacer' : '+ Ajouter' }}
+                    <button
+                      v-if="canEdit"
+                      type="button"
+                      :class="p.cad_filename ? 'link-button' : 'secondary'"
+                      style="margin-left:6px"
+                      @click="startCadStage(p)"
+                    >
+                      {{ p.cad_filename ? 'Remplacer' : (isElectron ? 'Attacher CAO / Générer via SolidWorks' : 'Attacher un fichier CAO') }}
                     </button>
                   </td>
                   <td style="white-space:nowrap">
