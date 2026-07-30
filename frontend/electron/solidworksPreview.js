@@ -24,6 +24,22 @@ import { promisify } from 'node:util';
 const execFileAsync = promisify(execFile);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+// cscript.exe is an external process — it has no idea what an .asar
+// archive is, so it cannot open a script living inside app.asar (only
+// Electron's own patched Node fs can see inside that virtual filesystem).
+// In the packaged app __dirname resolves to a path like
+// "...\resources\app.asar\electron", and every single "Command failed:
+// cscript.exe ..." report ever seen (parts and assemblies alike) was
+// this: cscript failing outright to even find the script file. The
+// electron-builder config now unpacks *.vbs into a real app.asar.unpacked
+// directory alongside app.asar with the identical relative structure, so
+// swapping app.asar for app.asar.unpacked in the resolved path gives the
+// real on-disk location. In dev, __dirname never contains "app.asar", so
+// this is a no-op there.
+function resolveExternallyReadablePath(p) {
+  return p.replace('app.asar', 'app.asar.unpacked');
+}
+
 const SUPPORTED_EXTENSIONS = new Set(['.sldprt', '.sldasm', '.slddrw']);
 const SOLID_EXTENSIONS = new Set(['.sldprt', '.sldasm']); // can export STL
 
@@ -37,7 +53,7 @@ export async function generateSolidWorksPreview(nativeFilePath) {
     return { success: false, error: `Type de fichier non pris en charge pour la génération auto : ${ext}` };
   }
 
-  const scriptPath = path.join(__dirname, 'solidworks-preview.vbs');
+  const scriptPath = resolveExternallyReadablePath(path.join(__dirname, 'solidworks-preview.vbs'));
   const id = randomUUID();
   const tmpPng = path.join(os.tmpdir(), `sw-preview-${id}.png`);
   const tmpLog = `${tmpPng}.log`;
