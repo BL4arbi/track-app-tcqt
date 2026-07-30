@@ -19,7 +19,7 @@ let renderer, scene, camera, controls, mesh, edges, animationId, resizeObserver;
 // or drag the cube to free-orbit the model — same as SolidWorks' cube.
 // Four rotate-arrow buttons sit around it (also SolidWorks-style) for
 // stepping the view by 90° instead of free dragging.
-const CUBE_SIZE = 84;
+const CUBE_SIZE = 56;
 const WIDGET_MARGIN = 10;
 const ARROW_SIZE = 22;
 const ARROW_GAP = 4;
@@ -39,12 +39,6 @@ const arrowStyles = {
   down: { top: `${cubeTop + CUBE_SIZE + ARROW_GAP}px`, right: `${cubeRight + cubeCenterOffset}px` },
   left: { top: `${cubeTop + cubeCenterOffset}px`, right: `${cubeRight + CUBE_SIZE + ARROW_GAP}px` },
   right: { top: `${cubeTop + cubeCenterOffset}px`, right: `${WIDGET_MARGIN}px` },
-  // Diagonal steppers sit at the 4 outer corners of the arrow cross, where
-  // the up/down row meets the left/right column.
-  ne: { top: `${WIDGET_MARGIN}px`, right: `${WIDGET_MARGIN}px` },
-  nw: { top: `${WIDGET_MARGIN}px`, right: `${cubeRight + CUBE_SIZE + ARROW_GAP}px` },
-  se: { top: `${cubeTop + CUBE_SIZE + ARROW_GAP}px`, right: `${WIDGET_MARGIN}px` },
-  sw: { top: `${cubeTop + CUBE_SIZE + ARROW_GAP}px`, right: `${cubeRight + CUBE_SIZE + ARROW_GAP}px` },
 };
 
 let cubeScene, cubeCamera, cubeMesh;
@@ -108,6 +102,11 @@ const CUBE_HALF = 0.8;
 
 function setupCube() {
   cubeScene = new THREE.Scene();
+  // Without an explicit background, clearing the scissored sub-viewport each
+  // frame falls back to the renderer's default clear color (opaque black),
+  // showing as an ugly black square around the rotating cube. Matching the
+  // main scene's background makes the cube's little viewport blend in.
+  cubeScene.background = new THREE.Color(0xf2f2f5);
   cubeCamera = new THREE.PerspectiveCamera(35, 1, 0.1, 10);
   cubeCamera.position.set(0, 0, 3.2);
 
@@ -165,10 +164,6 @@ function rotateViewUp() { rotateView(-Math.PI / 2, 0); }
 function rotateViewDown() { rotateView(Math.PI / 2, 0); }
 function rotateViewLeft() { rotateView(0, -Math.PI / 2); }
 function rotateViewRight() { rotateView(0, Math.PI / 2); }
-function rotateViewNE() { rotateView(-Math.PI / 2, Math.PI / 2); }
-function rotateViewNW() { rotateView(-Math.PI / 2, -Math.PI / 2); }
-function rotateViewSE() { rotateView(Math.PI / 2, Math.PI / 2); }
-function rotateViewSW() { rotateView(Math.PI / 2, -Math.PI / 2); }
 
 // SolidWorks-style: clicking a face snaps the view to it, but dragging the
 // cube free-orbits the model just like dragging anywhere else on the
@@ -377,10 +372,6 @@ onBeforeUnmount(() => {
       <button type="button" class="cube-arrow" :style="arrowStyles.down" title="Tourner vers le bas" @click="rotateViewDown">▼</button>
       <button type="button" class="cube-arrow" :style="arrowStyles.left" title="Tourner vers la gauche" @click="rotateViewLeft">◀</button>
       <button type="button" class="cube-arrow" :style="arrowStyles.right" title="Tourner vers la droite" @click="rotateViewRight">▶</button>
-      <button type="button" class="cube-arrow cube-arrow--diag" :style="arrowStyles.ne" title="Diagonale haut-droite" @click="rotateViewNE">↗</button>
-      <button type="button" class="cube-arrow cube-arrow--diag" :style="arrowStyles.nw" title="Diagonale haut-gauche" @click="rotateViewNW">↖</button>
-      <button type="button" class="cube-arrow cube-arrow--diag" :style="arrowStyles.se" title="Diagonale bas-droite" @click="rotateViewSE">↘</button>
-      <button type="button" class="cube-arrow cube-arrow--diag" :style="arrowStyles.sw" title="Diagonale bas-gauche" @click="rotateViewSW">↙</button>
     </template>
   </div>
 </template>
@@ -424,12 +415,10 @@ onBeforeUnmount(() => {
   cursor: pointer;
   transition: background 0.12s, color 0.12s, transform 0.12s;
 }
-.cube-arrow--diag { font-size: 11px; opacity: 0.85; }
 .cube-arrow:hover {
   background: var(--accent);
   color: #fff;
   border-color: var(--accent);
   transform: scale(1.12);
-  opacity: 1;
 }
 </style>
