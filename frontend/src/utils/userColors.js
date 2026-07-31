@@ -32,6 +32,21 @@ export function buildUserColorMap(users) {
   return map;
 }
 
+// Same palette/logic as buildUserColorMap, but keyed by an arbitrary string
+// (e.g. machine name) instead of a user id — ordered alphabetically so the
+// same set of names always gets the same colors in the same order,
+// regardless of which order parts happen to load in.
+export function buildStringColorMap(names) {
+  const dark = isDarkMode();
+  const sorted = [...new Set(names)].sort();
+  const map = new Map();
+  sorted.forEach((name, i) => {
+    const hue = PALETTE[i % PALETTE.length];
+    map.set(name, dark ? hue.dark : hue.light);
+  });
+  return map;
+}
+
 export function initials(fullName) {
   return (fullName || '')
     .split(/\s+/)

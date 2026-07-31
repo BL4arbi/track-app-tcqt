@@ -3,7 +3,8 @@ import { ref, onMounted, onBeforeUnmount, watch } from 'vue';
 import * as THREE from 'three';
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { mergeVertices, mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import occtimportjs from 'occt-import-js';
 
 const props = defineProps({ modelUrl: { type: String, required: true } });
 
@@ -249,10 +250,98 @@ function frameCameraToObject(object) {
   controls.update();
 }
 
+// STEP/IGES are opened directly in-browser via occt-import-js (Open
+// CASCADE compiled to WebAssembly) instead of needing SolidWorks — no
+// license, no local install, works identically for every team member.
+// Lazy-loaded and cached: the wasm binary is ~7MB, only worth fetching
+// once someone actually opens a STEP/IGES file.
+let occtModulePromise = null;
+function getOcct() {
+  if (!occtModulePromise) {
+    // The packaged Electron app loads dist/index.html via file://, where an
+    // absolute path ("/occt-import-js.wasm") resolves against the
+    // filesystem root, not the app folder — the exact bug already fixed
+    // once for Vite's own asset paths (see vite.config.js's `base: './'`).
+    // Resolving relative to the current document's own location (via
+    // import.meta.env.BASE_URL, which Vite sets to the same configured
+    // base) works correctly under both file:// and the dev server's http://.
+    const wasmUrl = new URL(`${import.meta.env.BASE_URL}occt-import-js.wasm`, window.location.href).href;
+    occtModulePromise = occtimportjs({
+      // The wasm file is copied into public/ at the app root — Vite
+      // doesn't otherwise know to bundle/serve it (it's fetched by the
+      // Emscripten glue code, not imported as an ES module).
+      locateFile: (path) => (path.endsWith('.wasm') ? wasmUrl : path),
+    });
+  }
+  return occtModulePromise;
+}
+
+function isStepOrIges(url) {
+  const clean = url.toLowerCase().split('?')[0].split('#')[0];
+  return ['.step', '.stp', '.iges', '.igs'].some((ext) => clean.endsWith(ext));
+}
+
+async function loadStepOrIgesGeometry(url) {
+  const occt = await getOcct();
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  const buffer = await response.arrayBuffer();
+  const fileBuffer = new Uint8Array(buffer);
+
+  const clean = url.toLowerCase().split('?')[0].split('#')[0];
+  const isIges = clean.endsWith('.iges') || clean.endsWith('.igs');
+  const result = isIges ? occt.ReadIgesFile(fileBuffer, null) : occt.ReadStepFile(fileBuffer, null);
+  if (!result.success || !result.meshes?.length) {
+    throw new Error('Le fichier ne contient aucune géométrie exploitable.');
+  }
+
+  // occt-import-js already computes proper per-vertex normals from the
+  // real B-rep surfaces (far more accurate than STL's facet normals), so
+  // — unlike the STL path below — this is used as-is, no
+  // mergeVertices/computeVertexNormals pass needed.
+  const geometries = result.meshes.map((m) => {
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(m.attributes.position.array, 3));
+    if (m.attributes.normal) {
+      geometry.setAttribute('normal', new THREE.Float32BufferAttribute(m.attributes.normal.array, 3));
+    }
+    geometry.setIndex(Array.from(m.index.array));
+    return geometry;
+  });
+  return geometries.length === 1 ? geometries[0] : mergeGeometries(geometries, false);
+}
+
+function buildMeshFromGeometry(geometry) {
+  const material = new THREE.MeshStandardMaterial({ color: 0x8f9bb3, metalness: 0.15, roughness: 0.6 });
+  mesh = new THREE.Mesh(geometry, material);
+  scene.add(mesh);
+
+  // Crisp dark lines along sharp edges (30° threshold) — the single
+  // biggest legibility win for a shaded solid: it's what makes a part
+  // read as a precise mechanical piece instead of a soft grey blob.
+  const edgesGeometry = new THREE.EdgesGeometry(geometry, 30);
+  edges = new THREE.LineSegments(edgesGeometry, new THREE.LineBasicMaterial({ color: 0x2b2d38 }));
+  mesh.add(edges);
+
+  frameCameraToObject(mesh);
+  loadingModel.value = false;
+}
+
 function loadModel(url) {
   clearMesh();
   loadingModel.value = true;
   loadError.value = '';
+
+  if (isStepOrIges(url)) {
+    loadStepOrIgesGeometry(url)
+      .then(buildMeshFromGeometry)
+      .catch((err) => {
+        loadingModel.value = false;
+        loadError.value = `Échec du chargement du modèle 3D : ${err?.message || err}`;
+      });
+    return;
+  }
+
   new STLLoader().load(
     url,
     (rawGeometry) => {
@@ -264,20 +353,7 @@ function loadModel(url) {
       // low-poly-looking blob.
       const geometry = mergeVertices(rawGeometry);
       geometry.computeVertexNormals();
-
-      const material = new THREE.MeshStandardMaterial({ color: 0x8f9bb3, metalness: 0.15, roughness: 0.6 });
-      mesh = new THREE.Mesh(geometry, material);
-      scene.add(mesh);
-
-      // Crisp dark lines along sharp edges (30° threshold) — the single
-      // biggest legibility win for a shaded solid: it's what makes a part
-      // read as a precise mechanical piece instead of a soft grey blob.
-      const edgesGeometry = new THREE.EdgesGeometry(geometry, 30);
-      edges = new THREE.LineSegments(edgesGeometry, new THREE.LineBasicMaterial({ color: 0x2b2d38 }));
-      mesh.add(edges);
-
-      frameCameraToObject(mesh);
-      loadingModel.value = false;
+      buildMeshFromGeometry(geometry);
     },
     undefined,
     (err) => {

@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { api } from '../api/client';
 import { useAuthStore } from '../store/auth';
 import { WORKFLOW_STEPS } from '../utils/workflowSteps';
+import { buildStringColorMap } from '../utils/userColors';
 import ModelViewer from '../components/ModelViewer.vue';
 
 const route = useRoute();
@@ -30,6 +31,7 @@ const editPartBrut = ref('');
 const savingPart = ref(false);
 const uploadingPartFileFor = ref(null);
 const viewingPartPlanFor = ref(null);
+const viewingPartModelFor = ref(null);
 
 const cadStagingFor = ref(null);
 const cadStageFile = ref(null);
@@ -134,6 +136,12 @@ const partsByMachine = computed(() => {
   return result;
 });
 
+// A distinct color per machine (same palette used for user avatars
+// elsewhere), so with several machines in one task it's immediately
+// visible at a glance which pieces belong together, not just readable
+// from the header text.
+const machineColors = computed(() => buildStringColorMap(partsByMachine.value.map((g) => g.machine)));
+
 // Suggestions for the machine input (datalist) — every distinct machine
 // name already used on this task, so re-adding pieces to the same machine
 // doesn't depend on retyping it identically.
@@ -170,9 +178,22 @@ function isPdfPreview(doc) {
   return !!doc.preview_image_path && doc.preview_image_path.toLowerCase().endsWith('.pdf');
 }
 
+const STEP_IGES_EXTENSIONS = new Set(['step', 'stp', 'iges', 'igs']);
+function isStepOrIgesDoc(doc) {
+  return STEP_IGES_EXTENSIONS.has((doc.file_type || '').toLowerCase());
+}
+
 function modelUrl(doc) {
-  if (!doc.model_path) return null;
-  return `${api.defaults.baseURL}/uploads/${doc.model_path}`;
+  // A generated STL (from SolidWorks) takes priority if present; otherwise,
+  // for a STEP/IGES upload, the original file itself is directly viewable
+  // in-browser (ModelViewer loads it via occt-import-js, no SolidWorks
+  // needed at all).
+  if (doc.model_path) return `${api.defaults.baseURL}/uploads/${doc.model_path}`;
+  if (isStepOrIgesDoc(doc)) return `${api.defaults.baseURL}/uploads/${doc.storage_path}`;
+  return null;
+}
+function hasViewable3dModel(doc) {
+  return !!doc.model_path || isStepOrIgesDoc(doc);
 }
 
 function downloadUrl(doc) {
@@ -444,8 +465,25 @@ function partPreviewUrl(part) {
   return part.preview_path ? `${api.defaults.baseURL}/uploads/${part.preview_path}` : null;
 }
 
+// A part's attached CAD file is directly viewable in 3D when it's a
+// STEP/IGES file — ModelViewer loads it via occt-import-js, no SolidWorks
+// needed. Native SolidWorks files (.sldprt/.sldasm) aren't viewable this
+// way (occt-import-js only reads neutral exchange formats); those only
+// get a 3D view if a preview was generated for them (which produces a
+// downloadable STL today, not wired to this part-level viewer — the
+// generated preview image is the 3D view surrogate for native files here).
+function partCadModelUrl(part) {
+  if (!part.cad_path) return null;
+  const ext = part.cad_path.toLowerCase();
+  const isStepOrIges = ['.step', '.stp', '.iges', '.igs'].some((e) => ext.endsWith(e));
+  return isStepOrIges ? `${api.defaults.baseURL}/uploads/${part.cad_path}` : null;
+}
+
 function togglePartPlan(partId) {
   viewingPartPlanFor.value = viewingPartPlanFor.value === partId ? null : partId;
+}
+function togglePartModel(partId) {
+  viewingPartModelFor.value = viewingPartModelFor.value === partId ? null : partId;
 }
 
 async function uploadPartFile(part, kind, file) {
@@ -833,11 +871,14 @@ onMounted(load);
           <tbody>
             <template v-for="group in partsByMachine" :key="group.machine">
               <tr>
-                <td colspan="7" class="machine-group-header">{{ group.machine }}</td>
+                <td colspan="7" class="machine-group-header" :style="{ borderLeft: `4px solid ${machineColors.get(group.machine)}` }">
+                  <span class="machine-color-dot" :style="{ background: machineColors.get(group.machine) }"></span>
+                  {{ group.machine }}
+                </td>
               </tr>
               <template v-for="p in group.items" :key="p.id">
                 <tr v-if="editingPartId !== p.id">
-                  <td style="white-space:nowrap">
+                  <td style="white-space:nowrap" :style="{ borderLeft: `4px solid ${machineColors.get(group.machine)}` }">
                     <select
                       class="part-status-select"
                       :class="p.status"
@@ -862,6 +903,9 @@ onMounted(load);
                   <td style="white-space:nowrap">
                     <a v-if="p.cad_filename" :href="partCadUrl(p)" :title="p.cad_filename">{{ p.cad_filename }}</a>
                     <span v-else class="muted">—</span>
+                    <button v-if="partCadModelUrl(p)" type="button" class="link-button" style="margin-left:6px" @click="togglePartModel(p.id)">
+                      {{ viewingPartModelFor === p.id ? 'Fermer la vue 3D' : 'Voir en 3D' }}
+                    </button>
                     <button
                       v-if="canEdit"
                       type="button"
@@ -921,6 +965,11 @@ onMounted(load);
                 <tr v-if="viewingPartPlanFor === p.id">
                   <td colspan="7">
                     <iframe :src="partPlanViewUrl(p)" style="width:100%; height:600px; border:1px solid var(--border); border-radius:8px"></iframe>
+                  </td>
+                </tr>
+                <tr v-if="viewingPartModelFor === p.id">
+                  <td colspan="7">
+                    <ModelViewer :model-url="partCadModelUrl(p)" style="height:420px" />
                   </td>
                 </tr>
                 <tr v-if="editingPartId === p.id">
@@ -1129,7 +1178,7 @@ onMounted(load);
               <button v-if="isPdfPreview(doc)" type="button" class="link-button" @click="togglePdf(doc.id)">
                 {{ viewingPdfFor === doc.id ? "Fermer l'aperçu" : "Voir l'aperçu PDF" }}
               </button>
-              <button v-if="doc.model_path" type="button" class="link-button" @click="toggleModel(doc.id)">
+              <button v-if="hasViewable3dModel(doc)" type="button" class="link-button" @click="toggleModel(doc.id)">
                 {{ viewingModelFor === doc.id ? 'Fermer la vue 3D' : 'Voir en 3D' }}
               </button>
               <a :href="downloadUrl(doc)">Télécharger</a>

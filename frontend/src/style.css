@@ -175,6 +175,14 @@ tr:hover td { background: var(--bg-subtle); }
   color: var(--text-h);
   border-top: 1px solid var(--border);
 }
+.machine-color-dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  margin-right: 8px;
+  vertical-align: middle;
+}
 
 .reminder-card { border-color: var(--accent); }
 .reminder-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
