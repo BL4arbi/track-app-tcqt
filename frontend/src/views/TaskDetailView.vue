@@ -8,8 +8,6 @@ import { buildStringColorMap } from '../utils/userColors';
 import { findClosestMatch } from '../utils/fuzzyMatch';
 import ModelViewer from '../components/ModelViewer.vue';
 
-const MATERIAL_TYPES = ['Aluminium', 'Acier', 'Inox', 'Laiton', 'Bronze', 'Plastique', 'Autre'];
-
 const route = useRoute();
 const router = useRouter();
 const auth = useAuthStore();
@@ -48,7 +46,9 @@ const cadStageUploading = ref(false);
 const purchases = ref([]);
 const suppliers = ref([]);
 const brutSuggestions = ref([]);
+const materialSuggestions = ref([]);
 const newPurchaseMachine = ref('');
+const newPurchasePartId = ref('');
 const newPurchaseDescription = ref('');
 const newPurchaseQuantity = ref(1);
 const newPurchaseRef = ref('');
@@ -166,6 +166,8 @@ const knownMachines = computed(() => {
 // used for the datalist suggestions.
 const newPartBrutHint = computed(() => findClosestMatch(newPartBrut.value.trim(), brutSuggestions.value));
 const editPartBrutHint = computed(() => findClosestMatch(editPartBrut.value.trim(), brutSuggestions.value));
+const newPartMaterialHint = computed(() => findClosestMatch(newPartMaterialType.value.trim(), materialSuggestions.value));
+const editPartMaterialHint = computed(() => findClosestMatch(editPartMaterialType.value.trim(), materialSuggestions.value));
 
 function formatDate(iso) {
   return new Date(iso).toLocaleString('fr-FR');
@@ -222,9 +224,10 @@ async function load() {
       api.get('/api/tasks/mine'),
       api.get('/api/suppliers'),
       api.get('/api/tasks/parts/brut-suggestions'),
+      api.get('/api/tasks/parts/material-suggestions'),
     ];
     if (auth.isManager) requests.push(api.get('/api/users/directory'));
-    const [taskRes, mineRes, suppliersRes, brutRes, teamRes] = await Promise.all(requests);
+    const [taskRes, mineRes, suppliersRes, brutRes, materialRes, teamRes] = await Promise.all(requests);
     task.value = taskRes.data.task;
     history.value = taskRes.data.history;
     documents.value = taskRes.data.documents;
@@ -233,6 +236,7 @@ async function load() {
     purchases.value = taskRes.data.purchases;
     suppliers.value = suppliersRes.data.suppliers;
     brutSuggestions.value = brutRes.data.brutOptions;
+    materialSuggestions.value = materialRes.data.materialOptions;
     parentOptions.value = mineRes.data.tasks.filter((t) => t.id !== task.value.id);
     if (teamRes) teamMembers.value = teamRes.data.users;
   } catch (e) {
@@ -451,7 +455,7 @@ async function addPart() {
       name: newPartName.value.trim(),
       comment: newPartComment.value.trim() || null,
       quantity: newPartQuantity.value || 1,
-      material_type: newPartMaterialType.value || null,
+      material_type: newPartMaterialType.value.trim() || null,
       brut: newPartBrut.value.trim() || null,
     });
     // Machine is deliberately NOT cleared — adding several pieces to the
@@ -621,7 +625,7 @@ async function saveEditPart(partId) {
       name: editPartName.value.trim(),
       comment: editPartComment.value.trim() || null,
       quantity: editPartQuantity.value || 1,
-      material_type: editPartMaterialType.value || null,
+      material_type: editPartMaterialType.value.trim() || null,
       brut: editPartBrut.value.trim() || null,
     });
     editingPartId.value = null;
@@ -642,6 +646,16 @@ async function resolveSupplierId() {
   return newPurchaseSupplierChoice.value || null;
 }
 
+// Picking a piece auto-fills Machine from that piece's own machine (only
+// if Machine is still empty — never overwrites something already typed),
+// since a purchase for a specific piece almost always belongs to that
+// piece's machine too.
+function onNewPurchasePartChange() {
+  if (newPurchaseMachine.value.trim()) return;
+  const part = parts.value.find((p) => p.id === Number(newPurchasePartId.value));
+  if (part?.machine) newPurchaseMachine.value = part.machine;
+}
+
 async function addPurchase() {
   purchaseError.value = '';
   if (!newPurchaseDescription.value.trim()) {
@@ -653,12 +667,15 @@ async function addPurchase() {
     const supplier_id = await resolveSupplierId();
     await api.post(`/api/tasks/${route.params.id}/purchases`, {
       machine: newPurchaseMachine.value.trim() || null,
+      part_id: newPurchasePartId.value || null,
       description: newPurchaseDescription.value.trim(),
       quantity: newPurchaseQuantity.value || 1,
       ref: newPurchaseRef.value.trim() || null,
       supplier_id,
     });
-    // Same reasoning as the parts form — keep Machine sticky.
+    // Same reasoning as the parts form — keep Machine sticky. Piece is
+    // cleared, since it's specific to one purchase, not a batch like Machine.
+    newPurchasePartId.value = '';
     newPurchaseDescription.value = '';
     newPurchaseQuantity.value = 1;
     newPurchaseRef.value = '';
@@ -687,6 +704,7 @@ function startEditPurchase(purchase) {
   editingPurchaseId.value = purchase.id;
   Object.assign(editPurchaseDraft, {
     machine: purchase.machine || '',
+    part_id: purchase.part_id || '',
     description: purchase.description,
     quantity: purchase.quantity,
     ref: purchase.ref || '',
@@ -702,6 +720,7 @@ async function saveEditPurchase(purchaseId) {
   try {
     await api.patch(`/api/tasks/purchases/${purchaseId}`, {
       machine: editPurchaseDraft.machine.trim() || null,
+      part_id: editPurchaseDraft.part_id || null,
       description: editPurchaseDraft.description.trim(),
       quantity: editPurchaseDraft.quantity || 1,
       ref: editPurchaseDraft.ref.trim() || null,
@@ -1016,14 +1035,15 @@ onMounted(load);
                     <div class="form-row">
                       <div class="field">
                         <label style="font-size:13px; font-weight:600">Matière</label>
-                        <select v-model="editPartMaterialType">
-                          <option value="">—</option>
-                          <option v-for="m in MATERIAL_TYPES" :key="m" :value="m">{{ m }}</option>
-                        </select>
+                        <input v-model="editPartMaterialType" list="material-suggestions" placeholder="ex. Alu, Fer, Inox…" class="field-lg" />
+                        <p v-if="editPartMaterialHint" class="muted" style="margin:4px 0 0">
+                          Vouliez-vous dire :
+                          <button type="button" class="link-button" @click="editPartMaterialType = editPartMaterialHint">{{ editPartMaterialHint }}</button> ?
+                        </p>
                       </div>
                       <div class="field">
                         <label style="font-size:13px; font-weight:600">Brut</label>
-                        <input v-model="editPartBrut" list="brut-suggestions" placeholder="ex. Plat étiré 80x30" />
+                        <input v-model="editPartBrut" list="brut-suggestions" placeholder="ex. Plat étiré 80x30" class="field-lg" />
                         <p v-if="editPartBrutHint" class="muted" style="margin:4px 0 0">
                           Vouliez-vous dire :
                           <button type="button" class="link-button" @click="editPartBrut = editPartBrutHint">{{ editPartBrutHint }}</button> ?
@@ -1065,14 +1085,18 @@ onMounted(load);
           <div class="form-row">
             <div class="field">
               <label>Matière</label>
-              <select v-model="newPartMaterialType">
-                <option value="">—</option>
-                <option v-for="m in MATERIAL_TYPES" :key="m" :value="m">{{ m }}</option>
-              </select>
+              <input v-model="newPartMaterialType" list="material-suggestions" placeholder="ex. Alu, Fer, Inox…" class="field-lg" />
+              <datalist id="material-suggestions">
+                <option v-for="m in materialSuggestions" :key="m" :value="m" />
+              </datalist>
+              <p v-if="newPartMaterialHint" class="muted" style="margin:4px 0 0">
+                Vouliez-vous dire :
+                <button type="button" class="link-button" @click="newPartMaterialType = newPartMaterialHint">{{ newPartMaterialHint }}</button> ?
+              </p>
             </div>
             <div class="field">
               <label>Brut (forme / dimensions)</label>
-              <input v-model="newPartBrut" list="brut-suggestions" placeholder="ex. Plat étiré 80x30" />
+              <input v-model="newPartBrut" list="brut-suggestions" placeholder="ex. Plat étiré 80x30" class="field-lg" />
               <datalist id="brut-suggestions">
                 <option v-for="b in brutSuggestions" :key="b" :value="b" />
               </datalist>
@@ -1100,6 +1124,7 @@ onMounted(load);
               <th style="width:1%">Statut</th>
               <th>Description</th>
               <th>Machine</th>
+              <th>Pièce</th>
               <th>Qté</th>
               <th>Ref</th>
               <th>Fournisseur</th>
@@ -1122,6 +1147,7 @@ onMounted(load);
                 </td>
                 <td>{{ pu.description }}</td>
                 <td>{{ pu.machine || '—' }}</td>
+                <td>{{ pu.part_name || '—' }}</td>
                 <td>{{ pu.quantity }}</td>
                 <td>{{ pu.ref || '—' }}</td>
                 <td>
@@ -1134,7 +1160,7 @@ onMounted(load);
                 </td>
               </tr>
               <tr v-else>
-                <td colspan="7">
+                <td colspan="8">
                   <div class="form-row">
                     <div class="field">
                       <label style="font-size:13px; font-weight:600">Description</label>
@@ -1142,7 +1168,14 @@ onMounted(load);
                     </div>
                     <div class="field">
                       <label style="font-size:13px; font-weight:600">Machine</label>
-                      <input v-model="editPurchaseDraft.machine" />
+                      <input v-model="editPurchaseDraft.machine" list="machine-suggestions" />
+                    </div>
+                    <div class="field">
+                      <label style="font-size:13px; font-weight:600">Pièce</label>
+                      <select v-model="editPurchaseDraft.part_id">
+                        <option value="">— aucune —</option>
+                        <option v-for="p in parts" :key="p.id" :value="p.id">{{ p.name }}</option>
+                      </select>
                     </div>
                     <div class="field">
                       <label style="font-size:13px; font-weight:600">Qté</label>
@@ -1171,6 +1204,13 @@ onMounted(load);
             <div class="field">
               <label>Machine (facultatif)</label>
               <input v-model="newPurchaseMachine" list="machine-suggestions" placeholder="ex. MACHINE ORBITALE 8" />
+            </div>
+            <div class="field">
+              <label>Pièce (facultatif)</label>
+              <select v-model="newPurchasePartId" @change="onNewPurchasePartChange">
+                <option value="">— aucune —</option>
+                <option v-for="p in parts" :key="p.id" :value="p.id">{{ p.name }}</option>
+              </select>
             </div>
             <div class="field">
               <label>Qté</label>

@@ -206,6 +206,15 @@ tr:hover td { background: var(--bg-subtle); }
 .form-row { display: flex; gap: 12px; }
 .form-row .field { flex: 1; }
 
+/* Matière / Brut were reported too small/cramped to comfortably read and
+   type into — bigger font, more padding, and a bit more room in the row
+   than its siblings. */
+.form-row .field-lg { flex: 1.6; }
+.field-lg input {
+  font-size: 16px;
+  padding: 10px 12px;
+}
+
 .toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
 
 .preview-thumb {

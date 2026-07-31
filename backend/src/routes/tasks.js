@@ -88,14 +88,11 @@ router.get('/:id', async (req, res) => {
     ),
   ]);
 
+  // PURCHASE_SELECT is defined further down in this file, but that's fine —
+  // it's a module-level const assigned when the file loads, well before any
+  // request handler actually runs.
   const { rows: purchases } = await pool.query(
-    `SELECT p.id, p.machine, p.description, p.quantity, p.ref, p.status,
-            p.supplier_id, COALESCE(s.name, p.supplier_name) AS supplier_name, s.link AS supplier_link,
-            p.created_at, u.full_name AS created_by
-     FROM task_purchases p
-     JOIN users u ON u.id = p.created_by
-     LEFT JOIN suppliers s ON s.id = p.supplier_id
-     WHERE p.task_id = $1 ORDER BY p.created_at`,
+    `${PURCHASE_SELECT} WHERE p.task_id = $1 ORDER BY p.created_at`,
     [task.id]
   );
 
@@ -251,6 +248,16 @@ router.get('/parts/brut-suggestions', async (_req, res) => {
   res.json({ brutOptions: rows.map((r) => r.brut) });
 });
 
+// Same idea, for material_type — free text, not a fixed list: the team
+// builds up its own vocabulary organically from what's actually typed,
+// rather than being constrained to a category list picked in advance.
+router.get('/parts/material-suggestions', async (_req, res) => {
+  const { rows } = await pool.query(
+    `SELECT DISTINCT material_type FROM task_parts WHERE material_type IS NOT NULL AND material_type <> '' ORDER BY material_type`
+  );
+  res.json({ materialOptions: rows.map((r) => r.material_type) });
+});
+
 router.post('/:id/parts', async (req, res) => {
   const { rows: taskRows } = await pool.query('SELECT * FROM tasks WHERE id = $1', [req.params.id]);
   const task = taskRows[0];
@@ -340,15 +347,17 @@ router.delete('/parts/:partId', loadPartForEdit, async (req, res) => {
 });
 
 // Achat: things to buy for a task (hardware, consumables, raw stock) — a
-// separate list from task_parts, not tied to one specific piece.
+// separate list from task_parts, optionally tagged with a machine and/or
+// linked to one specific piece.
 const PURCHASE_STATUSES = ['a_commander', 'commande', 'en_cours_livraison', 'recu'];
 const PURCHASE_SELECT = `
-  SELECT p.id, p.machine, p.description, p.quantity, p.ref, p.status,
+  SELECT p.id, p.machine, p.part_id, part.name AS part_name, p.description, p.quantity, p.ref, p.status,
          p.supplier_id, COALESCE(s.name, p.supplier_name) AS supplier_name, s.link AS supplier_link,
          p.created_at, u.full_name AS created_by
   FROM task_purchases p
   JOIN users u ON u.id = p.created_by
   LEFT JOIN suppliers s ON s.id = p.supplier_id
+  LEFT JOIN task_parts part ON part.id = p.part_id
 `;
 
 router.post('/:id/purchases', async (req, res) => {
@@ -359,7 +368,7 @@ router.post('/:id/purchases', async (req, res) => {
   const canEdit = req.user.role === 'manager' || task.assigned_user_id === req.user.id;
   if (!canEdit) return res.status(403).json({ error: "Vous ne pouvez modifier que vos propres tâches" });
 
-  const { machine, description, quantity, ref, supplier_id, supplier_name, status } = req.body || {};
+  const { machine, part_id, description, quantity, ref, supplier_id, supplier_name, status } = req.body || {};
   if (!description) return res.status(400).json({ error: "La description de l'achat est obligatoire" });
   if (status !== undefined && !PURCHASE_STATUSES.includes(status)) {
     return res.status(400).json({ error: "Statut d'achat invalide" });
@@ -368,11 +377,15 @@ router.post('/:id/purchases', async (req, res) => {
   if (!Number.isInteger(qty) || qty < 1) {
     return res.status(400).json({ error: 'La quantité doit être un entier positif' });
   }
+  if (part_id) {
+    const { rows: partRows } = await pool.query('SELECT id FROM task_parts WHERE id = $1 AND task_id = $2', [part_id, task.id]);
+    if (!partRows[0]) return res.status(400).json({ error: "Cette pièce n'appartient pas à cette tâche" });
+  }
 
   const { rows } = await pool.query(
-    `INSERT INTO task_purchases (task_id, machine, description, quantity, ref, supplier_id, supplier_name, status, created_by)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
-    [task.id, machine || null, description, qty, ref || null, supplier_id || null, supplier_name || null, status || 'a_commander', req.user.id]
+    `INSERT INTO task_purchases (task_id, machine, part_id, description, quantity, ref, supplier_id, supplier_name, status, created_by)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
+    [task.id, machine || null, part_id || null, description, qty, ref || null, supplier_id || null, supplier_name || null, status || 'a_commander', req.user.id]
   );
   const { rows: full } = await pool.query(`${PURCHASE_SELECT} WHERE p.id = $1`, [rows[0].id]);
   res.status(201).json({ purchase: full[0] });
@@ -394,7 +407,7 @@ async function loadPurchaseForEdit(req, res, next) {
 }
 
 router.patch('/purchases/:purchaseId', loadPurchaseForEdit, async (req, res) => {
-  const { machine, description, quantity, ref, supplier_id, supplier_name, status } = req.body || {};
+  const { machine, part_id, description, quantity, ref, supplier_id, supplier_name, status } = req.body || {};
   if (status !== undefined && !PURCHASE_STATUSES.includes(status)) {
     return res.status(400).json({ error: "Statut d'achat invalide" });
   }
@@ -405,8 +418,13 @@ router.patch('/purchases/:purchaseId', loadPurchaseForEdit, async (req, res) => 
       return res.status(400).json({ error: 'La quantité doit être un entier positif' });
     }
   }
+  if (part_id) {
+    const { rows: partRows } = await pool.query('SELECT id FROM task_parts WHERE id = $1 AND task_id = $2', [part_id, req.purchase.task_id]);
+    if (!partRows[0]) return res.status(400).json({ error: "Cette pièce n'appartient pas à cette tâche" });
+  }
   const next = {
     machine: machine !== undefined ? (machine || null) : req.purchase.machine,
+    part_id: part_id !== undefined ? (part_id || null) : req.purchase.part_id,
     description: description ?? req.purchase.description,
     quantity: qty,
     ref: ref !== undefined ? (ref || null) : req.purchase.ref,
@@ -415,10 +433,10 @@ router.patch('/purchases/:purchaseId', loadPurchaseForEdit, async (req, res) => 
     status: status ?? req.purchase.status,
   };
   await pool.query(
-    `UPDATE task_purchases SET machine = $1, description = $2, quantity = $3, ref = $4,
-                                supplier_id = $5, supplier_name = $6, status = $7
-     WHERE id = $8`,
-    [next.machine, next.description, next.quantity, next.ref, next.supplier_id, next.supplier_name, next.status, req.purchase.id]
+    `UPDATE task_purchases SET machine = $1, part_id = $2, description = $3, quantity = $4, ref = $5,
+                                supplier_id = $6, supplier_name = $7, status = $8
+     WHERE id = $9`,
+    [next.machine, next.part_id, next.description, next.quantity, next.ref, next.supplier_id, next.supplier_name, next.status, req.purchase.id]
   );
   const { rows: full } = await pool.query(`${PURCHASE_SELECT} WHERE p.id = $1`, [req.purchase.id]);
   res.json({ purchase: full[0] });

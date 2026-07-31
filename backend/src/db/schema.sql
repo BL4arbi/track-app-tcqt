@@ -110,8 +110,9 @@ CREATE TABLE IF NOT EXISTS suppliers (
 );
 
 -- Things to buy for a task (hardware, consumables, raw stock) — a separate
--- list from task_parts, not tied to one specific piece, though it can
--- optionally be tagged with the same free-text "machine" grouping.
+-- list from task_parts, but can optionally be tagged with the same
+-- free-text "machine" grouping AND/OR linked to one specific piece
+-- (part_id) when the purchase is for that piece in particular.
 -- supplier_name is always stored directly (denormalized) so a purchase
 -- still shows its supplier even if picked as free text rather than from
 -- the suppliers table; supplier_id is set only when linked to a directory
@@ -121,6 +122,7 @@ CREATE TABLE IF NOT EXISTS task_purchases (
   id              SERIAL PRIMARY KEY,
   task_id         INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
   machine         TEXT,
+  part_id         INTEGER REFERENCES task_parts(id) ON DELETE SET NULL,
   description     TEXT NOT NULL,
   quantity        INTEGER NOT NULL DEFAULT 1,
   ref             TEXT,
@@ -130,6 +132,8 @@ CREATE TABLE IF NOT EXISTS task_purchases (
   created_by      INTEGER NOT NULL REFERENCES users(id),
   created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+ALTER TABLE task_purchases ADD COLUMN IF NOT EXISTS part_id INTEGER REFERENCES task_parts(id) ON DELETE SET NULL;
 
 CREATE TABLE IF NOT EXISTS documents (
   id                  SERIAL PRIMARY KEY,
@@ -157,6 +161,7 @@ CREATE INDEX IF NOT EXISTS idx_documents_task ON documents(task_id);
 CREATE INDEX IF NOT EXISTS idx_task_purchases_task ON task_purchases(task_id);
 CREATE INDEX IF NOT EXISTS idx_task_purchases_status ON task_purchases(status);
 CREATE INDEX IF NOT EXISTS idx_task_purchases_ref ON task_purchases(ref);
+CREATE INDEX IF NOT EXISTS idx_task_purchases_part ON task_purchases(part_id);
 CREATE INDEX IF NOT EXISTS idx_suppliers_name ON suppliers(name);
 
 -- keep tasks.updated_at current on every row update
