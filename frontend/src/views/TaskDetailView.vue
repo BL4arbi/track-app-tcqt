@@ -42,6 +42,7 @@ const cadStageUploading = ref(false);
 
 const purchases = ref([]);
 const suppliers = ref([]);
+const brutSuggestions = ref([]);
 const newPurchaseMachine = ref('');
 const newPurchaseDescription = ref('');
 const newPurchaseQuantity = ref(1);
@@ -204,9 +205,14 @@ async function load() {
   loading.value = true;
   error.value = '';
   try {
-    const requests = [api.get(`/api/tasks/${route.params.id}`), api.get('/api/tasks/mine'), api.get('/api/suppliers')];
+    const requests = [
+      api.get(`/api/tasks/${route.params.id}`),
+      api.get('/api/tasks/mine'),
+      api.get('/api/suppliers'),
+      api.get('/api/tasks/parts/brut-suggestions'),
+    ];
     if (auth.isManager) requests.push(api.get('/api/users/directory'));
-    const [taskRes, mineRes, suppliersRes, teamRes] = await Promise.all(requests);
+    const [taskRes, mineRes, suppliersRes, brutRes, teamRes] = await Promise.all(requests);
     task.value = taskRes.data.task;
     history.value = taskRes.data.history;
     documents.value = taskRes.data.documents;
@@ -214,6 +220,7 @@ async function load() {
     parts.value = taskRes.data.parts;
     purchases.value = taskRes.data.purchases;
     suppliers.value = suppliersRes.data.suppliers;
+    brutSuggestions.value = brutRes.data.brutOptions;
     parentOptions.value = mineRes.data.tasks.filter((t) => t.id !== task.value.id);
     if (teamRes) teamMembers.value = teamRes.data.users;
   } catch (e) {
@@ -991,7 +998,7 @@ onMounted(load);
                     <div class="form-row">
                       <div class="field">
                         <label style="font-size:13px; font-weight:600">Brut</label>
-                        <input v-model="editPartBrut" placeholder="ex. Plat étiré 80x30" />
+                        <input v-model="editPartBrut" list="brut-suggestions" placeholder="ex. Plat étiré 80x30" />
                       </div>
                       <div class="field">
                         <label style="font-size:13px; font-weight:600">Commentaire</label>
@@ -1029,7 +1036,10 @@ onMounted(load);
           <div class="form-row">
             <div class="field">
               <label>Brut (matière à commander)</label>
-              <input v-model="newPartBrut" placeholder="ex. Plat étiré 80x30" />
+              <input v-model="newPartBrut" list="brut-suggestions" placeholder="ex. Plat étiré 80x30" />
+              <datalist id="brut-suggestions">
+                <option v-for="b in brutSuggestions" :key="b" :value="b" />
+              </datalist>
             </div>
             <div class="field">
               <label>Commentaire (facultatif)</label>

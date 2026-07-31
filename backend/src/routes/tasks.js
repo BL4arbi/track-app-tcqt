@@ -239,6 +239,18 @@ router.delete('/:id', async (req, res) => {
 // each with an optional comment and a procurement/manufacturing status.
 const PART_STATUSES = ['a_commander', 'commande', 'en_fabrication', 'fabrique'];
 
+// Every distinct "brut" (raw stock) ever typed across every task by every
+// user — autocomplete suggestions for the Brut field, so typing "Plat
+// étiré 80x30" once means nobody else has to retype it identically from
+// memory. Deliberately global (not scoped to a task or user): the whole
+// point is reusing what other people already typed.
+router.get('/parts/brut-suggestions', async (_req, res) => {
+  const { rows } = await pool.query(
+    `SELECT DISTINCT brut FROM task_parts WHERE brut IS NOT NULL AND brut <> '' ORDER BY brut`
+  );
+  res.json({ brutOptions: rows.map((r) => r.brut) });
+});
+
 router.post('/:id/parts', async (req, res) => {
   const { rows: taskRows } = await pool.query('SELECT * FROM tasks WHERE id = $1', [req.params.id]);
   const task = taskRows[0];
