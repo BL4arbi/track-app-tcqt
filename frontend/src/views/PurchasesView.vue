@@ -65,6 +65,7 @@ onMounted(load);
         <tr v-for="p in purchases" :key="p.id" :class="{ 'purchase-row--duplicate': p.other_tasks_count > 0 }">
           <td><span class="badge part-status-select" :class="p.status" style="display:inline-block">{{ STATUS_LABELS[p.status] }}</span></td>
           <td>
+            <span v-if="p.category === 'matiere'" class="category-badge matiere">Matière / Brut</span>
             {{ p.description }}
             <div v-if="p.other_tasks_count > 0" class="reminder-overdue" style="font-size:12px">
               ⚠ Aussi demandé par {{ p.other_tasks_count }} autre{{ p.other_tasks_count > 1 ? 's' : '' }} tâche{{ p.other_tasks_count > 1 ? 's' : '' }}

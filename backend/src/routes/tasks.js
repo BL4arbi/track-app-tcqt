@@ -81,7 +81,7 @@ router.get('/:id', async (req, res) => {
       [task.id]
     ),
     pool.query(
-      `SELECT id, machine, name, comment, quantity, material_type, brut, status,
+      `SELECT id, machine, name, comment, quantity, material_type, brut, material_status, status,
               cad_path, cad_filename, plan_path, plan_filename, preview_path, model_path, created_at
        FROM task_parts WHERE task_id = $1 ORDER BY machine NULLS LAST, created_at`,
       [task.id]
@@ -235,6 +235,9 @@ router.delete('/:id', async (req, res) => {
 // Manufactured-parts checklist: in-house elements to build for a task,
 // each with an optional comment and a procurement/manufacturing status.
 const PART_STATUSES = ['a_commander', 'commande', 'en_fabrication', 'fabrique'];
+// Whether the Matière/Brut for a piece still needs buying or is in stock —
+// independent of the piece's own manufacturing status above.
+const MATERIAL_STATUSES = ['a_commander', 'en_stock'];
 
 // Every distinct "brut" (raw stock) ever typed across every task by every
 // user — autocomplete suggestions for the Brut field, so typing "Plat
@@ -266,10 +269,13 @@ router.post('/:id/parts', async (req, res) => {
   const canEdit = req.user.role === 'manager' || task.assigned_user_id === req.user.id;
   if (!canEdit) return res.status(403).json({ error: "Vous ne pouvez modifier que vos propres tâches" });
 
-  const { machine, name, comment, quantity, material_type, brut, status } = req.body || {};
+  const { machine, name, comment, quantity, material_type, brut, material_status, status } = req.body || {};
   if (!name) return res.status(400).json({ error: "Le nom de la pièce est obligatoire" });
   if (status !== undefined && !PART_STATUSES.includes(status)) {
     return res.status(400).json({ error: 'Statut de pièce invalide' });
+  }
+  if (material_status !== undefined && !MATERIAL_STATUSES.includes(material_status)) {
+    return res.status(400).json({ error: 'Statut de matière invalide' });
   }
   const qty = quantity !== undefined && quantity !== '' ? Number(quantity) : 1;
   if (!Number.isInteger(qty) || qty < 1) {
@@ -277,10 +283,10 @@ router.post('/:id/parts', async (req, res) => {
   }
 
   const { rows } = await pool.query(
-    `INSERT INTO task_parts (task_id, machine, name, comment, quantity, material_type, brut, status)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-     RETURNING id, machine, name, comment, quantity, material_type, brut, status, cad_path, cad_filename, plan_path, plan_filename, preview_path, created_at`,
-    [task.id, machine || null, name, comment || null, qty, material_type || null, brut || null, status || 'a_commander']
+    `INSERT INTO task_parts (task_id, machine, name, comment, quantity, material_type, brut, material_status, status)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+     RETURNING id, machine, name, comment, quantity, material_type, brut, material_status, status, cad_path, cad_filename, plan_path, plan_filename, preview_path, model_path, created_at`,
+    [task.id, machine || null, name, comment || null, qty, material_type || null, brut || null, material_status || 'a_commander', status || 'a_commander']
   );
   res.status(201).json({ part: rows[0] });
 });
@@ -301,9 +307,12 @@ async function loadPartForEdit(req, res, next) {
 }
 
 router.patch('/parts/:partId', loadPartForEdit, async (req, res) => {
-  const { machine, name, comment, quantity, material_type, brut, status } = req.body || {};
+  const { machine, name, comment, quantity, material_type, brut, material_status, status } = req.body || {};
   if (status !== undefined && !PART_STATUSES.includes(status)) {
     return res.status(400).json({ error: 'Statut de pièce invalide' });
+  }
+  if (material_status !== undefined && !MATERIAL_STATUSES.includes(material_status)) {
+    return res.status(400).json({ error: 'Statut de matière invalide' });
   }
   let qty = req.part.quantity;
   if (quantity !== undefined && quantity !== '') {
@@ -319,12 +328,13 @@ router.patch('/parts/:partId', loadPartForEdit, async (req, res) => {
     quantity: qty,
     material_type: material_type !== undefined ? (material_type || null) : req.part.material_type,
     brut: brut !== undefined ? (brut || null) : req.part.brut,
+    material_status: material_status ?? req.part.material_status,
     status: status ?? req.part.status,
   };
   const { rows } = await pool.query(
-    `UPDATE task_parts SET machine = $1, name = $2, comment = $3, quantity = $4, material_type = $5, brut = $6, status = $7 WHERE id = $8
-     RETURNING id, machine, name, comment, quantity, material_type, brut, status, cad_path, cad_filename, plan_path, plan_filename, preview_path, created_at`,
-    [next.machine, next.name, next.comment, next.quantity, next.material_type, next.brut, next.status, req.part.id]
+    `UPDATE task_parts SET machine = $1, name = $2, comment = $3, quantity = $4, material_type = $5, brut = $6, material_status = $7, status = $8 WHERE id = $9
+     RETURNING id, machine, name, comment, quantity, material_type, brut, material_status, status, cad_path, cad_filename, plan_path, plan_filename, preview_path, model_path, created_at`,
+    [next.machine, next.name, next.comment, next.quantity, next.material_type, next.brut, next.material_status, next.status, req.part.id]
   );
   res.json({ part: rows[0] });
 });
@@ -350,8 +360,9 @@ router.delete('/parts/:partId', loadPartForEdit, async (req, res) => {
 // separate list from task_parts, optionally tagged with a machine and/or
 // linked to one specific piece.
 const PURCHASE_STATUSES = ['a_commander', 'commande', 'en_cours_livraison', 'recu'];
+const PURCHASE_CATEGORIES = ['general', 'matiere'];
 const PURCHASE_SELECT = `
-  SELECT p.id, p.machine, p.part_id, part.name AS part_name, p.description, p.quantity, p.ref, p.status,
+  SELECT p.id, p.machine, p.part_id, part.name AS part_name, p.category, p.description, p.quantity, p.ref, p.status,
          p.supplier_id, COALESCE(s.name, p.supplier_name) AS supplier_name, s.link AS supplier_link,
          p.created_at, u.full_name AS created_by
   FROM task_purchases p
@@ -368,10 +379,13 @@ router.post('/:id/purchases', async (req, res) => {
   const canEdit = req.user.role === 'manager' || task.assigned_user_id === req.user.id;
   if (!canEdit) return res.status(403).json({ error: "Vous ne pouvez modifier que vos propres tâches" });
 
-  const { machine, part_id, description, quantity, ref, supplier_id, supplier_name, status } = req.body || {};
+  const { machine, part_id, category, description, quantity, ref, supplier_id, supplier_name, status } = req.body || {};
   if (!description) return res.status(400).json({ error: "La description de l'achat est obligatoire" });
   if (status !== undefined && !PURCHASE_STATUSES.includes(status)) {
     return res.status(400).json({ error: "Statut d'achat invalide" });
+  }
+  if (category !== undefined && !PURCHASE_CATEGORIES.includes(category)) {
+    return res.status(400).json({ error: 'Catégorie d\'achat invalide' });
   }
   const qty = quantity !== undefined && quantity !== '' ? Number(quantity) : 1;
   if (!Number.isInteger(qty) || qty < 1) {
@@ -383,9 +397,9 @@ router.post('/:id/purchases', async (req, res) => {
   }
 
   const { rows } = await pool.query(
-    `INSERT INTO task_purchases (task_id, machine, part_id, description, quantity, ref, supplier_id, supplier_name, status, created_by)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
-    [task.id, machine || null, part_id || null, description, qty, ref || null, supplier_id || null, supplier_name || null, status || 'a_commander', req.user.id]
+    `INSERT INTO task_purchases (task_id, machine, part_id, category, description, quantity, ref, supplier_id, supplier_name, status, created_by)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id`,
+    [task.id, machine || null, part_id || null, category || 'general', description, qty, ref || null, supplier_id || null, supplier_name || null, status || 'a_commander', req.user.id]
   );
   const { rows: full } = await pool.query(`${PURCHASE_SELECT} WHERE p.id = $1`, [rows[0].id]);
   res.status(201).json({ purchase: full[0] });
@@ -407,9 +421,12 @@ async function loadPurchaseForEdit(req, res, next) {
 }
 
 router.patch('/purchases/:purchaseId', loadPurchaseForEdit, async (req, res) => {
-  const { machine, part_id, description, quantity, ref, supplier_id, supplier_name, status } = req.body || {};
+  const { machine, part_id, category, description, quantity, ref, supplier_id, supplier_name, status } = req.body || {};
   if (status !== undefined && !PURCHASE_STATUSES.includes(status)) {
     return res.status(400).json({ error: "Statut d'achat invalide" });
+  }
+  if (category !== undefined && !PURCHASE_CATEGORIES.includes(category)) {
+    return res.status(400).json({ error: 'Catégorie d\'achat invalide' });
   }
   let qty = req.purchase.quantity;
   if (quantity !== undefined && quantity !== '') {
@@ -425,6 +442,7 @@ router.patch('/purchases/:purchaseId', loadPurchaseForEdit, async (req, res) => 
   const next = {
     machine: machine !== undefined ? (machine || null) : req.purchase.machine,
     part_id: part_id !== undefined ? (part_id || null) : req.purchase.part_id,
+    category: category ?? req.purchase.category,
     description: description ?? req.purchase.description,
     quantity: qty,
     ref: ref !== undefined ? (ref || null) : req.purchase.ref,
@@ -433,10 +451,10 @@ router.patch('/purchases/:purchaseId', loadPurchaseForEdit, async (req, res) => 
     status: status ?? req.purchase.status,
   };
   await pool.query(
-    `UPDATE task_purchases SET machine = $1, part_id = $2, description = $3, quantity = $4, ref = $5,
-                                supplier_id = $6, supplier_name = $7, status = $8
-     WHERE id = $9`,
-    [next.machine, next.part_id, next.description, next.quantity, next.ref, next.supplier_id, next.supplier_name, next.status, req.purchase.id]
+    `UPDATE task_purchases SET machine = $1, part_id = $2, category = $3, description = $4, quantity = $5, ref = $6,
+                                supplier_id = $7, supplier_name = $8, status = $9
+     WHERE id = $10`,
+    [next.machine, next.part_id, next.category, next.description, next.quantity, next.ref, next.supplier_id, next.supplier_name, next.status, req.purchase.id]
   );
   const { rows: full } = await pool.query(`${PURCHASE_SELECT} WHERE p.id = $1`, [req.purchase.id]);
   res.json({ purchase: full[0] });

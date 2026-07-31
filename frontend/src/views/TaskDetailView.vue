@@ -22,6 +22,7 @@ const newPartComment = ref('');
 const newPartQuantity = ref(1);
 const newPartMaterialType = ref('');
 const newPartBrut = ref('');
+const newPartMaterialStatus = ref('a_commander');
 const addingPart = ref(false);
 const partError = ref('');
 const editingPartId = ref(null);
@@ -31,7 +32,10 @@ const editPartComment = ref('');
 const editPartQuantity = ref(1);
 const editPartMaterialType = ref('');
 const editPartBrut = ref('');
+const editPartMaterialStatus = ref('a_commander');
 const savingPart = ref(false);
+const sendingMaterialFor = ref(null);
+const materialSendError = ref('');
 const uploadingPartFileFor = ref(null);
 const viewingPartPlanFor = ref(null);
 const viewingPartModelFor = ref(null);
@@ -120,6 +124,8 @@ const PURCHASE_STATUS_LABELS = {
   en_cours_livraison: 'En cours de livraison',
   recu: 'Reçu',
 };
+const MATERIAL_STATUS_LABELS = { a_commander: 'À commander', en_stock: 'En stock' };
+const PURCHASE_CATEGORY_LABELS = { general: 'Général', matiere: 'Matière / Brut' };
 const NO_MACHINE = '— Sans machine —';
 
 // Group pieces by machine for display, matching the team's own spreadsheet
@@ -458,6 +464,7 @@ async function addPart() {
       quantity: newPartQuantity.value || 1,
       material_type: newPartMaterialType.value.trim() || null,
       brut: newPartBrut.value.trim() || null,
+      material_status: newPartMaterialStatus.value,
     });
     // Machine is deliberately NOT cleared — adding several pieces to the
     // same machine one after another (the normal workflow, per the
@@ -467,6 +474,7 @@ async function addPart() {
     newPartQuantity.value = 1;
     newPartMaterialType.value = '';
     newPartBrut.value = '';
+    newPartMaterialStatus.value = 'a_commander';
     await load();
   } catch (e) {
     partError.value = e.response?.data?.error || "Échec de l'ajout";
@@ -603,6 +611,11 @@ async function updatePartStatus(part, status) {
   await load();
 }
 
+async function updatePartMaterialStatus(part, material_status) {
+  await api.patch(`/api/tasks/parts/${part.id}`, { material_status });
+  await load();
+}
+
 async function deletePart(part) {
   if (!confirm(`Supprimer "${part.name}" de la liste des pièces à fabriquer ?`)) return;
   await api.delete(`/api/tasks/parts/${part.id}`);
@@ -617,6 +630,7 @@ function startEditPart(part) {
   editPartQuantity.value = part.quantity;
   editPartMaterialType.value = part.material_type || '';
   editPartBrut.value = part.brut || '';
+  editPartMaterialStatus.value = part.material_status || 'a_commander';
 }
 
 function cancelEditPart() {
@@ -633,11 +647,39 @@ async function saveEditPart(partId) {
       quantity: editPartQuantity.value || 1,
       material_type: editPartMaterialType.value.trim() || null,
       brut: editPartBrut.value.trim() || null,
+      material_status: editPartMaterialStatus.value,
     });
     editingPartId.value = null;
     await load();
   } finally {
     savingPart.value = false;
+  }
+}
+
+// "Envoyer vers Achat" — one click turns a piece's Matière/Brut (when
+// marked "à commander") into its own Achat line, pre-filled from the
+// piece (no retyping), tagged category 'matiere' so it stands out in the
+// Achat/Commandes lists. It's then a normal, independent purchase entry —
+// editable/markable "reçu" on its own, not kept in sync with the piece.
+function materialDescription(part) {
+  return [part.material_type, part.brut].filter(Boolean).join(' — ');
+}
+async function sendMaterialToPurchase(part) {
+  materialSendError.value = '';
+  sendingMaterialFor.value = part.id;
+  try {
+    await api.post(`/api/tasks/${route.params.id}/purchases`, {
+      machine: part.machine || null,
+      part_id: part.id,
+      category: 'matiere',
+      description: materialDescription(part),
+      quantity: part.quantity || 1,
+    });
+    await load();
+  } catch (e) {
+    materialSendError.value = e.response?.data?.error || "Échec de l'envoi vers Achat";
+  } finally {
+    sendingMaterialFor.value = null;
   }
 }
 
@@ -903,6 +945,7 @@ onMounted(load);
 
       <div class="card">
         <h2>Pièces à fabriquer ({{ parts.length }})</h2>
+        <p v-if="materialSendError" class="error-text">{{ materialSendError }}</p>
         <div v-if="!parts.length" class="muted">Aucune pièce à fabriquer en interne pour l'instant.</div>
         <table v-else>
           <thead>
@@ -949,6 +992,26 @@ onMounted(load);
                   <td>{{ p.quantity }}</td>
                   <td>
                     <span v-if="p.material_type" class="material-badge">{{ p.material_type }}</span>{{ p.brut || '—' }}
+                    <div v-if="p.material_type || p.brut" style="margin-top:6px; display:flex; align-items:center; gap:6px; flex-wrap:wrap">
+                      <select
+                        class="part-status-select"
+                        :class="p.material_status"
+                        :disabled="!canEdit"
+                        :value="p.material_status"
+                        @change="updatePartMaterialStatus(p, $event.target.value)"
+                      >
+                        <option v-for="(lbl, val) in MATERIAL_STATUS_LABELS" :key="val" :value="val">{{ lbl }}</option>
+                      </select>
+                      <button
+                        v-if="canEdit && p.material_status === 'a_commander'"
+                        type="button"
+                        class="link-button"
+                        :disabled="sendingMaterialFor === p.id"
+                        @click="sendMaterialToPurchase(p)"
+                      >
+                        {{ sendingMaterialFor === p.id ? 'Envoi…' : '→ Envoyer vers Achat' }}
+                      </button>
+                    </div>
                   </td>
                   <td style="white-space:nowrap">
                     <a v-if="p.cad_filename" :href="partCadUrl(p)" :title="p.cad_filename">{{ p.cad_filename }}</a>
@@ -1059,6 +1122,12 @@ onMounted(load);
                         <label style="font-size:13px; font-weight:600">Commentaire</label>
                         <input v-model="editPartComment" placeholder="(facultatif)" />
                       </div>
+                      <div class="field">
+                        <label style="font-size:13px; font-weight:600">Matière/Brut</label>
+                        <select v-model="editPartMaterialStatus">
+                          <option v-for="(lbl, val) in MATERIAL_STATUS_LABELS" :key="val" :value="val">{{ lbl }}</option>
+                        </select>
+                      </div>
                     </div>
                     <div style="display:flex; gap:8px">
                       <button type="button" :disabled="savingPart" @click="saveEditPart(p.id)">Enregistrer</button>
@@ -1115,6 +1184,12 @@ onMounted(load);
               <label>Commentaire (facultatif)</label>
               <input v-model="newPartComment" placeholder="ex. Alu 6mm, 2 exemplaires" />
             </div>
+            <div class="field">
+              <label>Matière/Brut</label>
+              <select v-model="newPartMaterialStatus">
+                <option v-for="(lbl, val) in MATERIAL_STATUS_LABELS" :key="val" :value="val">{{ lbl }}</option>
+              </select>
+            </div>
           </div>
           <p v-if="partError" class="error-text">{{ partError }}</p>
           <button type="submit" :disabled="addingPart">{{ addingPart ? 'Ajout…' : 'Ajouter' }}</button>
@@ -1151,7 +1226,10 @@ onMounted(load);
                     <option v-for="(lbl, val) in PURCHASE_STATUS_LABELS" :key="val" :value="val">{{ lbl }}</option>
                   </select>
                 </td>
-                <td>{{ pu.description }}</td>
+                <td>
+                  <span v-if="pu.category === 'matiere'" class="category-badge matiere">{{ PURCHASE_CATEGORY_LABELS.matiere }}</span>
+                  {{ pu.description }}
+                </td>
                 <td>{{ pu.machine || '—' }}</td>
                 <td>{{ pu.part_name || '—' }}</td>
                 <td>{{ pu.quantity }}</td>

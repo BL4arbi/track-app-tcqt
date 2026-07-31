@@ -19,7 +19,7 @@ router.get('/', async (_req, res) => {
     )
     SELECT k.id, k.task_id, t.title AS task_title, t.label AS task_label,
            u.full_name AS assigned_user_name,
-           k.machine, k.description, k.quantity, k.ref, k.status,
+           k.machine, k.category, k.description, k.quantity, k.ref, k.status,
            k.supplier_id, COALESCE(s.name, k.supplier_name) AS supplier_name, s.link AS supplier_link,
            k.created_at, creator.full_name AS created_by,
            COALESCE(dup.other_tasks_count, 0) AS other_tasks_count

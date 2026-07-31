@@ -68,6 +68,10 @@ CREATE TABLE IF NOT EXISTS task_parts (
   quantity      INTEGER NOT NULL DEFAULT 1,
   material_type TEXT, -- coarse category, e.g. "Aluminium" — separate from the free-text shape/dimensions below
   brut          TEXT, -- raw stock needed, e.g. "Plat étiré 80x30"
+  -- whether the Matière/Brut for this piece still needs to be bought, or is
+  -- already in stock — independent from `status` above, which tracks the
+  -- manufacturing of the piece itself, not its raw material.
+  material_status TEXT NOT NULL DEFAULT 'a_commander' CHECK (material_status IN ('a_commander', 'en_stock')),
   done          BOOLEAN NOT NULL DEFAULT FALSE,
   status        TEXT NOT NULL DEFAULT 'a_commander' CHECK (status IN ('a_commander', 'commande', 'en_fabrication', 'fabrique')),
   cad_path      TEXT,
@@ -81,6 +85,9 @@ CREATE TABLE IF NOT EXISTS task_parts (
 
 ALTER TABLE task_parts ADD COLUMN IF NOT EXISTS preview_path TEXT;
 ALTER TABLE task_parts ADD COLUMN IF NOT EXISTS model_path TEXT;
+ALTER TABLE task_parts ADD COLUMN IF NOT EXISTS material_status TEXT NOT NULL DEFAULT 'a_commander';
+ALTER TABLE task_parts DROP CONSTRAINT IF EXISTS task_parts_material_status_check;
+ALTER TABLE task_parts ADD CONSTRAINT task_parts_material_status_check CHECK (material_status IN ('a_commander', 'en_stock'));
 ALTER TABLE task_parts ADD COLUMN IF NOT EXISTS material_type TEXT;
 
 ALTER TABLE task_parts ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'a_commander';
@@ -125,6 +132,10 @@ CREATE TABLE IF NOT EXISTS task_purchases (
   task_id         INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
   machine         TEXT,
   part_id         INTEGER REFERENCES task_parts(id) ON DELETE SET NULL,
+  -- 'matiere' when sent here from a piece's Matière/Brut field ("Envoyer
+  -- vers Achat"), so it can be shown/colored as its own category, distinct
+  -- from an ordinary hardware/consumable purchase ('general').
+  category        TEXT NOT NULL DEFAULT 'general' CHECK (category IN ('general', 'matiere')),
   description     TEXT NOT NULL,
   quantity        INTEGER NOT NULL DEFAULT 1,
   ref             TEXT,
@@ -136,6 +147,9 @@ CREATE TABLE IF NOT EXISTS task_purchases (
 );
 
 ALTER TABLE task_purchases ADD COLUMN IF NOT EXISTS part_id INTEGER REFERENCES task_parts(id) ON DELETE SET NULL;
+ALTER TABLE task_purchases ADD COLUMN IF NOT EXISTS category TEXT NOT NULL DEFAULT 'general';
+ALTER TABLE task_purchases DROP CONSTRAINT IF EXISTS task_purchases_category_check;
+ALTER TABLE task_purchases ADD CONSTRAINT task_purchases_category_check CHECK (category IN ('general', 'matiere'));
 
 CREATE TABLE IF NOT EXISTS documents (
   id                  SERIAL PRIMARY KEY,
