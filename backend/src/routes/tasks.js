@@ -82,7 +82,7 @@ router.get('/:id', async (req, res) => {
     ),
     pool.query(
       `SELECT id, machine, name, comment, quantity, material_type, brut, status,
-              cad_path, cad_filename, plan_path, plan_filename, preview_path, created_at
+              cad_path, cad_filename, plan_path, plan_filename, preview_path, model_path, created_at
        FROM task_parts WHERE task_id = $1 ORDER BY machine NULLS LAST, created_at`,
       [task.id]
     ),
@@ -332,7 +332,7 @@ router.patch('/parts/:partId', loadPartForEdit, async (req, res) => {
 router.delete('/parts/:partId', loadPartForEdit, async (req, res) => {
   await pool.query('DELETE FROM task_parts WHERE id = $1', [req.part.id]);
   await Promise.all(
-    [req.part.cad_path, req.part.plan_path].filter(Boolean).map(async (rel) => {
+    [req.part.cad_path, req.part.plan_path, req.part.preview_path, req.part.model_path].filter(Boolean).map(async (rel) => {
       const abs = path.resolve(UPLOAD_DIR, rel);
       if (existsSync(abs)) {
         try {

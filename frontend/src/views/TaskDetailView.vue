@@ -39,6 +39,7 @@ const viewingPartModelFor = ref(null);
 const cadStagingFor = ref(null);
 const cadStageFile = ref(null);
 const cadStagePreview = ref(null);
+const cadStageModel = ref(null);
 const cadStageGenerating = ref(false);
 const cadStageError = ref('');
 const cadStageUploading = ref(false);
@@ -490,14 +491,13 @@ function partPreviewUrl(part) {
   return part.preview_path ? `${api.defaults.baseURL}/uploads/${part.preview_path}` : null;
 }
 
-// A part's attached CAD file is directly viewable in 3D when it's a
-// STEP/IGES file — ModelViewer loads it via occt-import-js, no SolidWorks
-// needed. Native SolidWorks files (.sldprt/.sldasm) aren't viewable this
-// way (occt-import-js only reads neutral exchange formats); those only
-// get a 3D view if a preview was generated for them (which produces a
-// downloadable STL today, not wired to this part-level viewer — the
-// generated preview image is the 3D view surrogate for native files here).
+// Same priority as a document's modelUrl(): a generated STL (from
+// SolidWorks, for native .sldprt/.sldasm files) takes priority if present;
+// otherwise, for a STEP/IGES upload, the original file itself is directly
+// viewable in-browser (ModelViewer loads it via occt-import-js, no
+// SolidWorks needed at all).
 function partCadModelUrl(part) {
+  if (part.model_path) return `${api.defaults.baseURL}/uploads/${part.model_path}`;
   if (!part.cad_path) return null;
   const ext = part.cad_path.toLowerCase();
   const isStepOrIges = ['.step', '.stp', '.iges', '.igs'].some((e) => ext.endsWith(e));
@@ -536,6 +536,7 @@ function startCadStage(part) {
   cadStagingFor.value = part.id;
   cadStageFile.value = null;
   cadStagePreview.value = null;
+  cadStageModel.value = null;
   cadStageError.value = '';
 }
 function cancelCadStage() {
@@ -561,7 +562,11 @@ async function generateCadPreview() {
       return;
     }
     cadStagePreview.value = new File([base64ToBytes(result.base64)], 'apercu-solidworks.png', { type: 'image/png' });
-    if (result.warning) cadStageError.value = result.warning;
+    if (result.modelBase64) {
+      cadStageModel.value = new File([base64ToBytes(result.modelBase64)], 'modele-solidworks.stl', { type: 'model/stl' });
+    } else if (result.warning) {
+      cadStageError.value = result.warning;
+    }
   } catch (e) {
     cadStageError.value = e.message || 'Échec de la génération automatique';
   } finally {
@@ -579,6 +584,7 @@ async function submitCadStage(part) {
   const form = new FormData();
   form.append('file', cadStageFile.value);
   if (cadStagePreview.value) form.append('previewImage', cadStagePreview.value);
+  if (cadStageModel.value) form.append('previewModel', cadStageModel.value);
   try {
     await api.patch(`/api/tasks/parts/${part.id}/cad`, form, {
       headers: { 'Content-Type': 'multipart/form-data' },
@@ -996,7 +1002,7 @@ onMounted(load);
                         >
                           {{ cadStageGenerating ? 'Génération…' : 'Générer via SolidWorks (bêta)' }}
                         </button>
-                        <p v-if="cadStagePreview" class="success-text">Aperçu généré ✓</p>
+                        <p v-if="cadStagePreview" class="success-text">Aperçu généré ✓ {{ cadStageModel ? '(+ modèle 3D)' : '' }}</p>
                       </div>
                     </div>
                     <p v-if="cadStageError" class="error-text">{{ cadStageError }}</p>

@@ -234,11 +234,15 @@ function partFileFilter(_req, file, cb) {
     const ext = path.extname(fixFilenameEncoding(file.originalname)).toLowerCase();
     if (!PREVIEW_EXTENSIONS.has(ext)) return cb(new Error(`L'aperçu doit être un png/jpg, reçu : ${ext}`));
   }
+  if (file.fieldname === 'previewModel') {
+    const ext = path.extname(fixFilenameEncoding(file.originalname)).toLowerCase();
+    if (!MODEL_EXTENSIONS.has(ext)) return cb(new Error(`Le modèle 3D doit être un .stl, reçu : ${ext}`));
+  }
   cb(null, true);
 }
 const uploadPartFile = multer({ storage: partFileStorage, fileFilter: partFileFilter, limits: { fileSize: 200 * 1024 * 1024 } });
 
-const PART_SELECT_COLUMNS = 'id, machine, name, comment, quantity, material_type, brut, status, cad_path, cad_filename, plan_path, plan_filename, preview_path, created_at';
+const PART_SELECT_COLUMNS = 'id, machine, name, comment, quantity, material_type, brut, status, cad_path, cad_filename, plan_path, plan_filename, preview_path, model_path, created_at';
 
 async function unlinkIfExists(relPath) {
   if (!relPath) return;
@@ -259,20 +263,23 @@ router.patch(
   uploadPartFile.fields([
     { name: 'file', maxCount: 1 },
     { name: 'previewImage', maxCount: 1 },
+    { name: 'previewModel', maxCount: 1 },
   ]),
   async (req, res) => {
     const file = req.files?.file?.[0];
     const previewImage = req.files?.previewImage?.[0];
+    const previewModel = req.files?.previewModel?.[0];
     if (!file) return res.status(400).json({ error: 'Le fichier CAO est obligatoire' });
     const toRelative = (f) => path.relative(UPLOAD_DIR, f.path).split(path.sep).join('/');
     const fixedName = fixFilenameEncoding(file.originalname);
     const { rows } = await pool.query(
-      `UPDATE task_parts SET cad_path = $1, cad_filename = $2, preview_path = COALESCE($3, preview_path)
-       WHERE id = $4 RETURNING ${PART_SELECT_COLUMNS}`,
-      [toRelative(file), fixedName, previewImage ? toRelative(previewImage) : null, req.part.id]
+      `UPDATE task_parts SET cad_path = $1, cad_filename = $2, preview_path = COALESCE($3, preview_path), model_path = COALESCE($4, model_path)
+       WHERE id = $5 RETURNING ${PART_SELECT_COLUMNS}`,
+      [toRelative(file), fixedName, previewImage ? toRelative(previewImage) : null, previewModel ? toRelative(previewModel) : null, req.part.id]
     );
     await unlinkIfExists(req.part.cad_path);
     if (previewImage) await unlinkIfExists(req.part.preview_path);
+    if (previewModel) await unlinkIfExists(req.part.model_path);
     res.json({ part: rows[0] });
   }
 );

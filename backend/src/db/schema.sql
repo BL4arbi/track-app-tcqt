@@ -75,10 +75,12 @@ CREATE TABLE IF NOT EXISTS task_parts (
   plan_path     TEXT,
   plan_filename TEXT,
   preview_path  TEXT, -- image generated from the CAD file (e.g. via SolidWorks automation)
+  model_path    TEXT, -- STL generated from the CAD file (e.g. via SolidWorks automation), viewable in 3D like a document
   created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 ALTER TABLE task_parts ADD COLUMN IF NOT EXISTS preview_path TEXT;
+ALTER TABLE task_parts ADD COLUMN IF NOT EXISTS model_path TEXT;
 ALTER TABLE task_parts ADD COLUMN IF NOT EXISTS material_type TEXT;
 
 ALTER TABLE task_parts ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'a_commander';
