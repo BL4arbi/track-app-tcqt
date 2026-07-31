@@ -238,7 +238,7 @@ function partFileFilter(_req, file, cb) {
 }
 const uploadPartFile = multer({ storage: partFileStorage, fileFilter: partFileFilter, limits: { fileSize: 200 * 1024 * 1024 } });
 
-const PART_SELECT_COLUMNS = 'id, machine, name, comment, quantity, brut, status, cad_path, cad_filename, plan_path, plan_filename, preview_path, created_at';
+const PART_SELECT_COLUMNS = 'id, machine, name, comment, quantity, material_type, brut, status, cad_path, cad_filename, plan_path, plan_filename, preview_path, created_at';
 
 async function unlinkIfExists(relPath) {
   if (!relPath) return;

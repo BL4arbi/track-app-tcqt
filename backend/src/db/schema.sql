@@ -66,6 +66,7 @@ CREATE TABLE IF NOT EXISTS task_parts (
   name          TEXT NOT NULL,
   comment       TEXT,
   quantity      INTEGER NOT NULL DEFAULT 1,
+  material_type TEXT, -- coarse category, e.g. "Aluminium" — separate from the free-text shape/dimensions below
   brut          TEXT, -- raw stock needed, e.g. "Plat étiré 80x30"
   done          BOOLEAN NOT NULL DEFAULT FALSE,
   status        TEXT NOT NULL DEFAULT 'a_commander' CHECK (status IN ('a_commander', 'commande', 'en_fabrication', 'fabrique')),
@@ -78,6 +79,7 @@ CREATE TABLE IF NOT EXISTS task_parts (
 );
 
 ALTER TABLE task_parts ADD COLUMN IF NOT EXISTS preview_path TEXT;
+ALTER TABLE task_parts ADD COLUMN IF NOT EXISTS material_type TEXT;
 
 ALTER TABLE task_parts ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'a_commander';
 -- Widen the CHECK constraint for databases created before 'en_fabrication'

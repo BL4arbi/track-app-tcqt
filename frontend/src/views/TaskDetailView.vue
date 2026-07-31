@@ -5,7 +5,10 @@ import { api } from '../api/client';
 import { useAuthStore } from '../store/auth';
 import { WORKFLOW_STEPS } from '../utils/workflowSteps';
 import { buildStringColorMap } from '../utils/userColors';
+import { findClosestMatch } from '../utils/fuzzyMatch';
 import ModelViewer from '../components/ModelViewer.vue';
+
+const MATERIAL_TYPES = ['Aluminium', 'Acier', 'Inox', 'Laiton', 'Bronze', 'Plastique', 'Autre'];
 
 const route = useRoute();
 const router = useRouter();
@@ -19,6 +22,7 @@ const newPartMachine = ref('');
 const newPartName = ref('');
 const newPartComment = ref('');
 const newPartQuantity = ref(1);
+const newPartMaterialType = ref('');
 const newPartBrut = ref('');
 const addingPart = ref(false);
 const partError = ref('');
@@ -27,6 +31,7 @@ const editPartMachine = ref('');
 const editPartName = ref('');
 const editPartComment = ref('');
 const editPartQuantity = ref(1);
+const editPartMaterialType = ref('');
 const editPartBrut = ref('');
 const savingPart = ref(false);
 const uploadingPartFileFor = ref(null);
@@ -154,6 +159,13 @@ const knownMachines = computed(() => {
   }
   return [...seen.values()];
 });
+
+// "Vouliez-vous dire...": catches accent/typo variants of an already-used
+// Brut value (e.g. "Plat etire 80x30" vs the existing "Plat étiré 80x30")
+// so it doesn't silently save as a near-duplicate — cross-task, same list
+// used for the datalist suggestions.
+const newPartBrutHint = computed(() => findClosestMatch(newPartBrut.value.trim(), brutSuggestions.value));
+const editPartBrutHint = computed(() => findClosestMatch(editPartBrut.value.trim(), brutSuggestions.value));
 
 function formatDate(iso) {
   return new Date(iso).toLocaleString('fr-FR');
@@ -439,6 +451,7 @@ async function addPart() {
       name: newPartName.value.trim(),
       comment: newPartComment.value.trim() || null,
       quantity: newPartQuantity.value || 1,
+      material_type: newPartMaterialType.value || null,
       brut: newPartBrut.value.trim() || null,
     });
     // Machine is deliberately NOT cleared — adding several pieces to the
@@ -447,6 +460,7 @@ async function addPart() {
     newPartName.value = '';
     newPartComment.value = '';
     newPartQuantity.value = 1;
+    newPartMaterialType.value = '';
     newPartBrut.value = '';
     await load();
   } catch (e) {
@@ -591,6 +605,7 @@ function startEditPart(part) {
   editPartName.value = part.name;
   editPartComment.value = part.comment || '';
   editPartQuantity.value = part.quantity;
+  editPartMaterialType.value = part.material_type || '';
   editPartBrut.value = part.brut || '';
 }
 
@@ -606,6 +621,7 @@ async function saveEditPart(partId) {
       name: editPartName.value.trim(),
       comment: editPartComment.value.trim() || null,
       quantity: editPartQuantity.value || 1,
+      material_type: editPartMaterialType.value || null,
       brut: editPartBrut.value.trim() || null,
     });
     editingPartId.value = null;
@@ -906,7 +922,9 @@ onMounted(load);
                     </div>
                   </td>
                   <td>{{ p.quantity }}</td>
-                  <td>{{ p.brut || '—' }}</td>
+                  <td>
+                    <span v-if="p.material_type" class="material-badge">{{ p.material_type }}</span>{{ p.brut || '—' }}
+                  </td>
                   <td style="white-space:nowrap">
                     <a v-if="p.cad_filename" :href="partCadUrl(p)" :title="p.cad_filename">{{ p.cad_filename }}</a>
                     <span v-else class="muted">—</span>
@@ -997,8 +1015,19 @@ onMounted(load);
                     </div>
                     <div class="form-row">
                       <div class="field">
+                        <label style="font-size:13px; font-weight:600">Matière</label>
+                        <select v-model="editPartMaterialType">
+                          <option value="">—</option>
+                          <option v-for="m in MATERIAL_TYPES" :key="m" :value="m">{{ m }}</option>
+                        </select>
+                      </div>
+                      <div class="field">
                         <label style="font-size:13px; font-weight:600">Brut</label>
                         <input v-model="editPartBrut" list="brut-suggestions" placeholder="ex. Plat étiré 80x30" />
+                        <p v-if="editPartBrutHint" class="muted" style="margin:4px 0 0">
+                          Vouliez-vous dire :
+                          <button type="button" class="link-button" @click="editPartBrut = editPartBrutHint">{{ editPartBrutHint }}</button> ?
+                        </p>
                       </div>
                       <div class="field">
                         <label style="font-size:13px; font-weight:600">Commentaire</label>
@@ -1035,11 +1064,22 @@ onMounted(load);
           </div>
           <div class="form-row">
             <div class="field">
-              <label>Brut (matière à commander)</label>
+              <label>Matière</label>
+              <select v-model="newPartMaterialType">
+                <option value="">—</option>
+                <option v-for="m in MATERIAL_TYPES" :key="m" :value="m">{{ m }}</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>Brut (forme / dimensions)</label>
               <input v-model="newPartBrut" list="brut-suggestions" placeholder="ex. Plat étiré 80x30" />
               <datalist id="brut-suggestions">
                 <option v-for="b in brutSuggestions" :key="b" :value="b" />
               </datalist>
+              <p v-if="newPartBrutHint" class="muted" style="margin:4px 0 0">
+                Vouliez-vous dire :
+                <button type="button" class="link-button" @click="newPartBrut = newPartBrutHint">{{ newPartBrutHint }}</button> ?
+              </p>
             </div>
             <div class="field">
               <label>Commentaire (facultatif)</label>

@@ -81,7 +81,7 @@ router.get('/:id', async (req, res) => {
       [task.id]
     ),
     pool.query(
-      `SELECT id, machine, name, comment, quantity, brut, status,
+      `SELECT id, machine, name, comment, quantity, material_type, brut, status,
               cad_path, cad_filename, plan_path, plan_filename, preview_path, created_at
        FROM task_parts WHERE task_id = $1 ORDER BY machine NULLS LAST, created_at`,
       [task.id]
@@ -259,7 +259,7 @@ router.post('/:id/parts', async (req, res) => {
   const canEdit = req.user.role === 'manager' || task.assigned_user_id === req.user.id;
   if (!canEdit) return res.status(403).json({ error: "Vous ne pouvez modifier que vos propres tâches" });
 
-  const { machine, name, comment, quantity, brut, status } = req.body || {};
+  const { machine, name, comment, quantity, material_type, brut, status } = req.body || {};
   if (!name) return res.status(400).json({ error: "Le nom de la pièce est obligatoire" });
   if (status !== undefined && !PART_STATUSES.includes(status)) {
     return res.status(400).json({ error: 'Statut de pièce invalide' });
@@ -270,10 +270,10 @@ router.post('/:id/parts', async (req, res) => {
   }
 
   const { rows } = await pool.query(
-    `INSERT INTO task_parts (task_id, machine, name, comment, quantity, brut, status)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)
-     RETURNING id, machine, name, comment, quantity, brut, status, cad_path, cad_filename, plan_path, plan_filename, preview_path, created_at`,
-    [task.id, machine || null, name, comment || null, qty, brut || null, status || 'a_commander']
+    `INSERT INTO task_parts (task_id, machine, name, comment, quantity, material_type, brut, status)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+     RETURNING id, machine, name, comment, quantity, material_type, brut, status, cad_path, cad_filename, plan_path, plan_filename, preview_path, created_at`,
+    [task.id, machine || null, name, comment || null, qty, material_type || null, brut || null, status || 'a_commander']
   );
   res.status(201).json({ part: rows[0] });
 });
@@ -294,7 +294,7 @@ async function loadPartForEdit(req, res, next) {
 }
 
 router.patch('/parts/:partId', loadPartForEdit, async (req, res) => {
-  const { machine, name, comment, quantity, brut, status } = req.body || {};
+  const { machine, name, comment, quantity, material_type, brut, status } = req.body || {};
   if (status !== undefined && !PART_STATUSES.includes(status)) {
     return res.status(400).json({ error: 'Statut de pièce invalide' });
   }
@@ -310,13 +310,14 @@ router.patch('/parts/:partId', loadPartForEdit, async (req, res) => {
     name: name ?? req.part.name,
     comment: comment !== undefined ? (comment || null) : req.part.comment,
     quantity: qty,
+    material_type: material_type !== undefined ? (material_type || null) : req.part.material_type,
     brut: brut !== undefined ? (brut || null) : req.part.brut,
     status: status ?? req.part.status,
   };
   const { rows } = await pool.query(
-    `UPDATE task_parts SET machine = $1, name = $2, comment = $3, quantity = $4, brut = $5, status = $6 WHERE id = $7
-     RETURNING id, machine, name, comment, quantity, brut, status, cad_path, cad_filename, plan_path, plan_filename, preview_path, created_at`,
-    [next.machine, next.name, next.comment, next.quantity, next.brut, next.status, req.part.id]
+    `UPDATE task_parts SET machine = $1, name = $2, comment = $3, quantity = $4, material_type = $5, brut = $6, status = $7 WHERE id = $8
+     RETURNING id, machine, name, comment, quantity, material_type, brut, status, cad_path, cad_filename, plan_path, plan_filename, preview_path, created_at`,
+    [next.machine, next.name, next.comment, next.quantity, next.material_type, next.brut, next.status, req.part.id]
   );
   res.json({ part: rows[0] });
 });
