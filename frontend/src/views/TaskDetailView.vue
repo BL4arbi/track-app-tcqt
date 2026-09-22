@@ -3,7 +3,7 @@ import { ref, computed, reactive, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { api } from '../api/client';
 import { useAuthStore } from '../store/auth';
-import { WORKFLOW_STEPS } from '../utils/workflowSteps';
+import { WORKFLOW_STEPS, nextWorkflowStep } from '../utils/workflowSteps';
 import { buildStringColorMap } from '../utils/userColors';
 import { findClosestMatch } from '../utils/fuzzyMatch';
 import ModelViewer from '../components/ModelViewer.vue';
@@ -609,6 +609,16 @@ async function submitCadStage(part) {
 async function updatePartStatus(part, status) {
   await api.patch(`/api/tasks/parts/${part.id}`, { status });
   await load();
+
+  if (status !== 'fabrique') return;
+  const allFabrique = parts.value.length > 0 && parts.value.every((p) => p.status === 'fabrique');
+  if (!allFabrique || task.value.current_step !== 'Fabrication') return;
+
+  const next = nextWorkflowStep('Fabrication');
+  if (next && confirm(`Toutes les pièces sont fabriquées. Passer l'étape du chantier à "${next}" ?`)) {
+    await api.patch(`/api/tasks/${route.params.id}`, { current_step: next });
+    await load();
+  }
 }
 
 async function updatePartMaterialStatus(part, material_status) {
